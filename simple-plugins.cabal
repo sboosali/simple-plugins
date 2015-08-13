@@ -32,7 +32,7 @@ library
  hs-source-dirs:
   sources
  exposed-modules:
-  Plugins
+  SimplePlugins
 
  build-depends:
 --  , lens  ==4.12.*

@@ -1,5 +1,5 @@
-{-# LANGUAGE OverloadedStrings, LambdaCase #-}
-module Plugins where
+{-# LANGUAGE OverloadedStrings, LambdaCase, ScopedTypeVariables #-}
+module SimplePlugins where
 
 import System.FSNotify
 import System.FilePath
@@ -14,9 +14,7 @@ import Data.IORef
 import Control.Monad
 import Control.Concurrent
 import Control.Monad.IO.Class
-
-getSandboxDb = undefined
-getStackDb = undefined
+import Data.Dynamic
 
 directoryWatcher :: IO (Chan Event)
 directoryWatcher = do
@@ -83,23 +81,19 @@ withGHCSession mainFileName extraImportPaths action = do
 
         -- Get the default dynFlags
         dflags0 <- getSessionDynFlags
-        
+
+        let sandboxPackageDB = "/Users/sambo/voice/simple-plugins/.cabal-sandbox/x86_64-osx-ghc-7.10.1-packages.conf.d"
+
         -- If there's a sandbox, add its package DB
-        dflags1 <- liftIO getSandboxDb >>= \case
-            Nothing -> return dflags0
-            Just sandboxDB -> do
-                let pkgs = map PkgConfFile [sandboxDB]
-                return dflags0 { extraPkgConfs = (pkgs ++) . extraPkgConfs dflags0 }
+        dflags1 <- return$ dflags0 { extraPkgConfs = (PkgConfFile sandboxPackageDB :) . extraPkgConfs dflags0 }
 
         -- If this is a stack project, add its package DBs
-        dflags2 <- liftIO getStackDb >>= \case
-            Nothing -> return dflags1
-            Just stackDBs -> do
-                let pkgs = map PkgConfFile stackDBs
-                return dflags1 { extraPkgConfs = (pkgs ++) . extraPkgConfs dflags1 }
+        dflags2 <- return dflags1
 
         -- Make sure we're configured for live-reload, and turn off the GHCi sandbox
         -- since it breaks OpenGL/GUI usage
+-- we have to use HscInterpreted and LinkInMemory; otherwise it would compile target.hs in the current directory and leave target.hi and target.o files, which we would not be able to load in the interpreted mode.
+-- CompManager: like ghc --make
         let dflags3 = dflags2 { hscTarget = HscInterpreted
                               , ghcLink   = LinkInMemory
                               , ghcMode   = CompManager
@@ -135,15 +129,27 @@ recompileTargets = handleSourceError printException $ do
         -- Load the dependencies of the main target
         setContext $ map (IIModule . ms_mod_name) graph
 
-        -- Run the target file's "main" function
-        rr <- runStmt "main" RunToCompletion
-        case rr of
-            RunOk _ -> liftIO $ putStrLn "OK"
-            RunException exception -> liftIO $ print exception
-            RunBreak _ _ _ -> liftIO $ putStrLn "Breakpoint"
+        -- load the target file's "plugin" identifier
+        dynamic <- dynCompileExpr "plugin"
+        case fromDynamic dynamic of
+         Nothing -> do
+          liftIO$ putStrLn$ s"plugin has wrong type"
+         Just  (plugin::String) -> do
+          liftIO$ putStrLn$ s"plugin is being reloaded.."
+          -- liftIO$ reloadPlugin plugin
+          liftIO$ print plugin
+
+s :: String -> String
+s = id
+
+data Plugin = Plugin String
+
+reloadPlugin :: Plugin -> IO ()
+reloadPlugin (Plugin value) = do
+ print value
 
 
--- A helper from interactive-diagrams to print out GHC API values, 
+-- a helper from interactive-diagrams to print out GHC API values, 
 -- useful while debugging the API.
 -- | Outputs any value that can be pretty-printed using the default style
 output :: (GhcMonad m, MonadIO m) => Outputable a => a -> m ()
