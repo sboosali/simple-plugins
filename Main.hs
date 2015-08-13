@@ -1,4 +1,4 @@
-import Plugins
+import           Plugins
 
 main = do
  print "Plugins"
