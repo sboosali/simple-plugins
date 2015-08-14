@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module SimplePlugins where
-import           SimplePlugins.Types    ()
+import           SimplePlugins.Types
 
 import           System.FilePath
 import           System.FSNotify
@@ -34,7 +34,7 @@ directoryWatcher = do
     eventChan <- newChan
     _ <- forkIO $ withManager $ \manager -> do
         -- start a watching job (in the background)
-        let watchDirectory = "."
+        let watchDirectory = "executables"
         _stopListening <- watchTreeChan
             manager
             watchDirectory
@@ -47,7 +47,7 @@ directoryWatcher = do
 
 
 
-recompiler :: proxy plugin -> FilePath -> [FilePath] -> IO ()
+recompiler :: (Typeable plugin) => proxy plugin -> FilePath -> [FilePath] -> IO ()
 recompiler proxy mainFileName importPaths' = withGHCSession mainFileName importPaths' $ do
     mainThreadId <- liftIO myThreadId
 
@@ -91,9 +91,11 @@ withGHCSession mainFileName extraImportPaths action = do
         -- Get the default dynFlags
         dflags0 <- getSessionDynFlags
 
-        let sandboxPackageDB = "/Users/sambo/voice/simple-plugins/.cabal-sandbox/x86_64-osx-ghc-7.10.1-packages.conf.d"
+        let projectDirectory = "/Users/sambo/voice/simple-plugins/"
+        let sandboxPackageDB = projectDirectory ++ ".cabal-sandbox/x86_64-osx-ghc-7.10.1-packages.conf.d"
+        let inplacePackageDB = projectDirectory ++ "dist/package.conf.inplace"
         -- If there's a sandbox, add its package DB
-        let packageDBs = [PkgConfFile sandboxPackageDB]
+        let packageDBs = [PkgConfFile sandboxPackageDB, PkgConfFile inplacePackageDB]
         dflags1 <- return$ dflags0 { extraPkgConfs = (packageDBs ++) . extraPkgConfs dflags0 }
 
         -- If this is a stack project, add its package DBs
@@ -128,7 +130,7 @@ withGHCSession mainFileName extraImportPaths action = do
 
 
 -- Recompiles the current targets
-recompileTargets :: proxy plugin -> Ghc ()
+recompileTargets :: (Typeable plugin) => proxy plugin -> Ghc ()
 recompileTargets _proxy = handleSourceError printException $ do
     -- Get the dependencies of the main target
     graph <- depanal [] False
@@ -144,13 +146,23 @@ recompileTargets _proxy = handleSourceError printException $ do
 
         -- load the target file's "plugin" identifier
         dynamic <- dynCompileExpr "plugin"
+        let typeRep_importedPlugin = typeRep (undefined :: Maybe Plugin)
+        let typeRep_proxiedPlugin = typeRep _proxy
+        let typeRep_loadedPlugin = dynTypeRep dynamic
+        liftIO$ do
+         putStrLn ""
+         print $ showTypeRep typeRep_importedPlugin
+         print $ showTypeRep typeRep_proxiedPlugin
+         print $ showTypeRep typeRep_loadedPlugin
+         print $ typeRep_importedPlugin == typeRep_loadedPlugin
+         putStrLn ""
         case fromDynamic dynamic of
-         Nothing -> do
-          liftIO$ putStrLn$ s"plugin has wrong type"
-         Just  plugin -> do
-          liftIO$ putStrLn$ s"plugin is being reloaded.."
-          -- liftIO$ reloadPlugin proxy plugin
-          liftIO$ print (plugin::String)
+         Nothing -> liftIO$ do
+          putStrLn$ s"plugin has wrong type"
+         Just  plugin -> liftIO$ do
+          putStrLn$ s"plugin is being reloaded.."
+          -- reloadPlugin proxy plugin
+          print (plugin::Plugin)
 
 showTypeRep :: TypeRep -> (String, String, String, Fingerprint)
 showTypeRep tr = (tyConName tc, tyConModule tc, tyConPackage tc, tyConFingerprint tc)

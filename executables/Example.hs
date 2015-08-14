@@ -1,12 +1,15 @@
 {-# LANGUAGE TemplateHaskell #-}
-import           Language.Haskell.TH.Syntax ()
+module Example where
 import           SimplePlugins.Types
 
+import           Data.Proxy
+import           Language.Haskell.TH.Syntax ()
 
-plugin = show 'plugin
+proxy :: Proxy Plugin
+proxy = Proxy
 
--- plugin :: Plugin
--- plugin = Plugin "example"
+plugin :: Plugin
+plugin = Plugin (show 'plugin)
 
 -- plugin = Plugin "reloaded" -- it sees the change
 -- plugin =            -- it prints the parse error

@@ -45,6 +45,7 @@ library
     directory, 
     filepath, 
     fsnotify  ==0.2.*,
+    template-haskell  ==2.10.*,
 
     base ==4.8.*
 
@@ -68,4 +69,5 @@ executable example
     simple-plugins
   , base ==4.8.*
   , ghc
+  , template-haskell  ==2.10.*
 
