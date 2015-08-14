@@ -33,10 +33,12 @@ library
   sources
  exposed-modules:
   SimplePlugins
+  SimplePlugins.Types
 
+  
  build-depends:
 --  , lens  ==4.12.*
-    ghc, 
+    ghc,
     ghc-paths, 
     bin-package-db,
     transformers,
@@ -56,7 +58,7 @@ library
 
 executable example
  main-is: Main.hs
- hs-source-dirs: .
+ hs-source-dirs: executables
 
  default-language: Haskell2010
  ghc-options:
@@ -65,5 +67,5 @@ executable example
  build-depends:
     simple-plugins
   , base ==4.8.*
+  , ghc
 
---  , lens

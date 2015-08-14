@@ -1,25 +1,35 @@
-{-# LANGUAGE OverloadedStrings, LambdaCase, ScopedTypeVariables #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module SimplePlugins where
+import           SimplePlugins.Types    ()
 
-import System.FSNotify
-import System.FilePath
+import           System.FilePath
+import           System.FSNotify
 
-import GHC
-import Linker
-import Packages
-import DynFlags
-import GHC.Paths
-import Outputable
-import Data.IORef
-import Control.Monad
-import Control.Concurrent
-import Control.Monad.IO.Class
-import Data.Dynamic
+import           Control.Concurrent
+import           Control.Monad
+import           Control.Monad.IO.Class
+import           Data.Dynamic
+import           Data.IORef
+import           Data.Typeable          ()
+
+import           DynFlags
+import           Fingerprint
+import           GHC
+import           GHC.Paths
+import           Linker
+import           Outputable
+import           Packages
+
+-- for OverloadedStrings
+s :: String -> String
+s = id
 
 directoryWatcher :: IO (Chan Event)
 directoryWatcher = do
     let predicate event = case event of
-            Modified path _ -> takeExtension path `elem` [".hs", ".vert", ".frag", ".pd"]
+            Modified path _ -> takeExtension path `elem` [".hs"]
             _               -> False
     eventChan <- newChan
     _ <- forkIO $ withManager $ \manager -> do
@@ -37,8 +47,8 @@ directoryWatcher = do
 
 
 
-recompiler :: FilePath -> [FilePath] -> IO ()
-recompiler mainFileName importPaths' = withGHCSession mainFileName importPaths' $ do
+recompiler :: proxy plugin -> FilePath -> [FilePath] -> IO ()
+recompiler proxy mainFileName importPaths' = withGHCSession mainFileName importPaths' $ do
     mainThreadId <- liftIO myThreadId
 
     {-
@@ -62,14 +72,13 @@ recompiler mainFileName importPaths' = withGHCSession mainFileName importPaths' 
         putMVar recompile ()
         mainIsDone <- readIORef mainDone
         unless mainIsDone $ killThread mainThreadId
-    
+
     -- Start up the app
     forever $ do
         _ <- liftIO $ takeMVar recompile
         liftIO $ writeIORef mainDone False
-        recompileTargets
+        recompileTargets proxy
         liftIO $ writeIORef mainDone True
-        
 
 
 withGHCSession :: FilePath -> [FilePath] -> Ghc () -> IO ()
@@ -83,9 +92,9 @@ withGHCSession mainFileName extraImportPaths action = do
         dflags0 <- getSessionDynFlags
 
         let sandboxPackageDB = "/Users/sambo/voice/simple-plugins/.cabal-sandbox/x86_64-osx-ghc-7.10.1-packages.conf.d"
-
         -- If there's a sandbox, add its package DB
-        dflags1 <- return$ dflags0 { extraPkgConfs = (PkgConfFile sandboxPackageDB :) . extraPkgConfs dflags0 }
+        let packageDBs = [PkgConfFile sandboxPackageDB]
+        dflags1 <- return$ dflags0 { extraPkgConfs = (packageDBs ++) . extraPkgConfs dflags0 }
 
         -- If this is a stack project, add its package DBs
         dflags2 <- return dflags1
@@ -94,29 +103,33 @@ withGHCSession mainFileName extraImportPaths action = do
         -- since it breaks OpenGL/GUI usage
 -- we have to use HscInterpreted and LinkInMemory; otherwise it would compile target.hs in the current directory and leave target.hi and target.o files, which we would not be able to load in the interpreted mode.
 -- CompManager: like ghc --make
+-- verbosity is 3 (like @ghc -v@), for debugging
         let dflags3 = dflags2 { hscTarget = HscInterpreted
                               , ghcLink   = LinkInMemory
                               , ghcMode   = CompManager
                               , importPaths = allImportPaths
+                              , verbosity = 3
                               } `gopt_unset` Opt_GhciSandbox
-        
+                                -- `gopt_set` Opt_BuildingCabalPackage -- ?
+
         -- We must set dynflags before calling initPackages or any other GHC API
         _ <- setSessionDynFlags dflags3
 
         -- Initialize the package database
-        (dflags4, _) <- liftIO $ initPackages dflags3
+        (dflags4, _) <- liftIO$ initPackages dflags3
 
         -- Initialize the dynamic linker
-        liftIO $ initDynLinker dflags4 
+        liftIO $ initDynLinker dflags4
 
         -- Set the given filename as a compilation target
         setTargets =<< sequence [guessTarget mainFileName Nothing]
 
         action
 
+
 -- Recompiles the current targets
-recompileTargets :: Ghc ()
-recompileTargets = handleSourceError printException $ do
+recompileTargets :: proxy plugin -> Ghc ()
+recompileTargets _proxy = handleSourceError printException $ do
     -- Get the dependencies of the main target
     graph <- depanal [] False
 
@@ -125,31 +138,30 @@ recompileTargets = handleSourceError printException $ do
     unless (failed loadSuccess) $ do
         -- We must parse and typecheck modules before they'll be available for usage
         forM_ graph (typecheckModule <=< parseModule)
-        
+
         -- Load the dependencies of the main target
-        setContext $ map (IIModule . ms_mod_name) graph
+        setContext $ (IIModule . ms_mod_name) <$> graph
 
         -- load the target file's "plugin" identifier
         dynamic <- dynCompileExpr "plugin"
         case fromDynamic dynamic of
          Nothing -> do
           liftIO$ putStrLn$ s"plugin has wrong type"
-         Just  (plugin::String) -> do
+         Just  plugin -> do
           liftIO$ putStrLn$ s"plugin is being reloaded.."
-          -- liftIO$ reloadPlugin plugin
-          liftIO$ print plugin
+          -- liftIO$ reloadPlugin proxy plugin
+          liftIO$ print (plugin::String)
 
-s :: String -> String
-s = id
+showTypeRep :: TypeRep -> (String, String, String, Fingerprint)
+showTypeRep tr = (tyConName tc, tyConModule tc, tyConPackage tc, tyConFingerprint tc)
+ where tc = typeRepTyCon tr
 
-data Plugin = Plugin String
+-- reloadPlugin :: Show a => Plugin a -> IO ()
+-- reloadPlugin :: proxy plugin -> Plugin a -> IO ()
+-- reloadPlugin _ (Plugin value) = do
+--  print value
 
-reloadPlugin :: Plugin -> IO ()
-reloadPlugin (Plugin value) = do
- print value
-
-
--- a helper from interactive-diagrams to print out GHC API values, 
+-- a helper from interactive-diagrams to print out GHC API values,
 -- useful while debugging the API.
 -- | Outputs any value that can be pretty-printed using the default style
 output :: (GhcMonad m, MonadIO m) => Outputable a => a -> m ()
