@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase, OverloadedStrings, ScopedTypeVariables, RecordWildCards          #-}
+{-# LANGUAGE LambdaCase, OverloadedStrings, ScopedTypeVariables, RecordWildCards, DoAndIfThenElse     #-}
 module SimplePlugins where
 import           SimplePlugins.Types
 import           SimplePlugins.Etc
@@ -20,31 +20,39 @@ import           Packages
 
 
 
+directoryWatcher :: LoaderConfig -> IO (Chan Event)
+directoryWatcher loaderConfig = do
+ channel <- newChan
+ _ <- forkDirectoryWatcher channel loaderConfig
+ return channel
+
+forkDirectoryWatcher :: Chan Event -> LoaderConfig -> IO ThreadId
+forkDirectoryWatcher channel loaderConfig@LoaderConfig{..} = do
+ forkIO$ withManager $ \manager -> do
+     -- start a watching job (in the background)
+     _stopListening <- watchTreeChan
+         manager
+         _pluginDirectory
+         (eventPredicate loaderConfig)
+         channel
+     -- Keep the watcher alive forever
+     forever$ threadDelay (1*1000*1000) 
+
 eventPredicate :: LoaderConfig -> Event -> Bool 
 eventPredicate LoaderConfig{..} = \case 
  Modified path _ -> takeExtension path `elem` _pluginExtensions
  Added    path _ -> takeExtension path `elem` _pluginExtensions
  Removed  path _ -> takeExtension path `elem` _pluginExtensions
 
+blockUntil :: IORef Bool -> IO ()
+blockUntil flag = do   
+  isDone <- readIORef flag
+  if   isDone
+  then return ()
+  else do
+   threadDelay (1*1000)
+   blockUntil flag
 
-
-directoryWatcher :: LoaderConfig -> IO (Chan Event)
-directoryWatcher loaderConfig@LoaderConfig{..} = do
-
- eventChan <- newChan
-
- _ <- forkIO$ withManager $ \manager -> do
-     -- start a watching job (in the background)
-     let watchDirectory = _pluginDirectory
-     _stopListening <- watchTreeChan
-         manager
-         watchDirectory
-         (eventPredicate loaderConfig)
-         eventChan
-     -- Keep the watcher alive forever
-     forever$ threadDelay 10000000
-
- return eventChan
 
 
  {-
@@ -59,20 +67,19 @@ directoryWatcher loaderConfig@LoaderConfig{..} = do
 recompiler :: (Typeable plugin) => proxy plugin -> LoaderConfig -> GhcConfig -> IO ()
 recompiler proxy loaderConfig ghcConfig = withGHCSession loaderConfig ghcConfig $ do
 
- mainThreadId <- liftIO myThreadId
-
  mainDone  <- liftIO$ newIORef False
  -- Start with a full MVar so we recompile right away.
  recompile <- liftIO$ newMVar ()
 
  -- Watch for changes and recompile whenever they occur
- watcher <- liftIO$ directoryWatcher loaderConfig
+ channel <- liftIO$ directoryWatcher loaderConfig
  _ <- liftIO . forkIO . forever $ do
-   readChan watcher >>= print
+   -- blocks on reading from the channel
+   event <- readChan channel
 
+   print event
    putMVar recompile ()
-   mainIsDone <- readIORef mainDone
-   unless mainIsDone $ killThread mainThreadId
+   blockUntil mainDone           -- NOTE the GhcMonad is stateful, thus, it must be accessed linearly
 
  -- Start up the app
  forever$ do

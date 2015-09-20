@@ -1,6 +1,8 @@
 {-# LANGUAGE RecordWildCards, NamedFieldPuns    #-}
 {-# OPTIONS_GHC -O0 -fno-warn-missing-signatures -fno-warn-partial-type-signatures #-}
 import           Example.Plugin
+-- import qualified Example.Pipes
+
 import           SimplePlugins
 import           SimplePlugins.Types 
 
@@ -9,8 +11,8 @@ import System.IO (hPutStrLn,stderr)
 
 main = do
  print "Plugins"
- -- recompiler proxy "./executables/Example.hs" ["./sources"]
  recompiler proxy exampleLoaderConfig exampleGhcConfig
+ -- Example.Pipes.main
 
 exampleLoaderConfig = (defaultLoaderConfig sandboxPackageDB){_pluginFile, _pluginDirectory}
  where
