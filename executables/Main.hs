@@ -7,11 +7,11 @@ import           SimplePlugins
 import           SimplePlugins.Types 
 
 import System.IO (hPutStrLn,stderr) 
+-- import           Control.Concurrent
 
 
 main = do
- print "Plugins"
- recompiler proxy exampleLoaderConfig exampleGhcConfig
+ recompiler pluginProxy exampleLoaderConfig exampleGhcConfig
  -- Example.Pipes.main
 
 exampleLoaderConfig = (defaultLoaderConfig sandboxPackageDB){_pluginFile, _pluginDirectory}
@@ -25,3 +25,5 @@ exampleGhcConfig = defaultGhcConfig{_ghcFatalMessager}
  _ghcFatalMessager message = do -- our message redirection works
   hPutStrLn stderr message 
   hPutStrLn stderr message 
+
+       -- print (plugin::Plugin)

@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase, OverloadedStrings, ScopedTypeVariables, RecordWildCards, DoAndIfThenElse     #-}
+{-# LANGUAGE LambdaCase, OverloadedStrings, ScopedTypeVariables, RecordWildCards, DoAndIfThenElse, ConstraintKinds #-}
 module SimplePlugins where
 import           SimplePlugins.Types
 import           SimplePlugins.Etc
@@ -55,6 +55,12 @@ blockUntil flag = do
 
 
 
+-- forkRecompiler :: (Typeable plugin) => proxy plugin -> LoaderConfig -> GhcConfig -> IO ThreadId
+-- forkRecompiler proxy loaderConfig ghcConfig = forkIO$ withGHCSession loaderConfig ghcConfig $ do
+--  error "forkRecompiler" 
+
+
+
  {-
  Watcher:
      Tell the main thread to recompile.
@@ -64,7 +70,7 @@ blockUntil flag = do
      Before recompiling & running, mark that we've started,
      and after we're done running, mark that we're done.
  -}
-recompiler :: (Typeable plugin) => proxy plugin -> LoaderConfig -> GhcConfig -> IO ()
+recompiler :: (IsPlugin plugin) => proxy plugin -> LoaderConfig -> GhcConfig -> IO ()
 recompiler proxy loaderConfig ghcConfig = withGHCSession loaderConfig ghcConfig $ do
 
  mainDone  <- liftIO$ newIORef False
@@ -74,6 +80,7 @@ recompiler proxy loaderConfig ghcConfig = withGHCSession loaderConfig ghcConfig 
  -- Watch for changes and recompile whenever they occur
  channel <- liftIO$ directoryWatcher loaderConfig
  _ <- liftIO . forkIO . forever $ do
+
    -- blocks on reading from the channel
    event <- readChan channel
 
@@ -83,10 +90,16 @@ recompiler proxy loaderConfig ghcConfig = withGHCSession loaderConfig ghcConfig 
 
  -- Start up the app
  forever$ do
+
+   -- blocks on reading from the mutable variable 
    _ <- liftIO $ takeMVar recompile
+
    liftIO$ writeIORef mainDone False
    recompileTargets proxy ghcConfig
    liftIO$ writeIORef mainDone True
+
+-- channel of filesystem events -> channel of plug-ins 
+
 
 
 
@@ -134,7 +147,7 @@ withGHCSession LoaderConfig{..} GhcConfig{..} action = do
 
 
 -- Recompiles the current targets
-recompileTargets :: (Typeable plugin) => proxy plugin -> GhcConfig -> Ghc ()
+recompileTargets :: forall proxy plugin. (IsPlugin plugin) => proxy plugin -> GhcConfig -> Ghc ()
 recompileTargets _proxy GhcConfig{..} = handleSourceError printException $ do
  -- Get the dependencies of the main target
  graph <- depanal [] False
@@ -149,22 +162,11 @@ recompileTargets _proxy GhcConfig{..} = handleSourceError printException $ do
 
      -- load the target file's "plugin" identifier
      dynamic <- dynCompileExpr "plugin"
-     let typeRep_importedPlugin = typeRep (undefined :: Maybe Plugin)
-     let typeRep_proxiedPlugin = typeRep _proxy
-     let typeRep_loadedPlugin = dynTypeRep dynamic
-     liftIO$ do
-      putStrLn ""
-      print $ showTypeRep typeRep_importedPlugin
-      print $ showTypeRep typeRep_proxiedPlugin
-      print $ showTypeRep typeRep_loadedPlugin
-      print $ typeRep_importedPlugin == typeRep_loadedPlugin
-      putStrLn ""
      case fromDynamic dynamic of
       Nothing -> liftIO$ do
        putStrLn$ s"plugin has wrong type"
       Just  plugin -> liftIO$ do
        putStrLn$ s"plugin is being reloaded.."
        -- reloadPlugin proxy plugin
-       print (plugin::Plugin)
-
+       print (plugin::plugin)
 

@@ -1,12 +1,18 @@
-{-# LANGUAGE AutoDeriveTypeable, RecordWildCards  #-}
+{-# LANGUAGE AutoDeriveTypeable, RecordWildCards, ConstraintKinds  #-}
 module SimplePlugins.Types where
 
+import Data.Typeable
+
 import DynFlags (FlushOut(..), defaultFatalMessager, defaultFlushOut)
+import HscTypes (SourceError)
+import GhcMonad (Ghc, printException)
 
 
 data Plugin = Plugin String
 -- data Plugin a = Plugin a
  deriving (Show,Eq,Ord)
+
+type IsPlugin a = (Typeable a, Show a) 
 
 {- |
 
@@ -28,6 +34,7 @@ data GhcConfig = GhcConfig
  { _ghcCompilationVerbosity :: Int  -- ^ @3@ is like @ghc -v@, useful for debugging
  , _ghcFatalMessager     :: String -> IO () -- ^ by default, prints error messages to 'stderr'
  , _ghcFlushOut          :: IO ()           -- ^ by default, flushes 'stdout'
+ , _printSourceError     :: SourceError -> Ghc () -- ^ 
  }
 
 -- | uses relative paths. takes the platform specific _sandboxPackageDB. 
@@ -48,4 +55,5 @@ defaultGhcConfig = GhcConfig{..}
  _ghcCompilationVerbosity = 1
  _ghcFatalMessager        = defaultFatalMessager
  FlushOut _ghcFlushOut    = defaultFlushOut        -- user avoids GHC library dependency 
+ _printSourceError        = printException
 

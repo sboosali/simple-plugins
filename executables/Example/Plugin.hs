@@ -8,11 +8,12 @@ import           SimplePlugins.Types
 import           Data.Proxy
 
 
-proxy :: Proxy Plugin
-proxy = Proxy
+pluginProxy :: Proxy Plugin
+pluginProxy = Proxy
 
 plugin :: Plugin
 plugin = Plugin (show 'plugin) 
+-- plugin = Plugin (show 'plugin ++ " reloaded") 
 
 -- plugin = Plugin "reloaded" -- it sees the change
 -- plugin =                   -- it prints the parse error
