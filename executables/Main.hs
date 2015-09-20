@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards, NamedFieldPuns    #-}
 {-# OPTIONS_GHC -O0 -fno-warn-missing-signatures -fno-warn-partial-type-signatures #-}
-import           Example
+import           Example.Plugin
 import           SimplePlugins
 import           SimplePlugins.Types 
 
@@ -15,7 +15,7 @@ main = do
 exampleLoaderConfig = (defaultLoaderConfig sandboxPackageDB){_pluginFile, _pluginDirectory}
  where
  sandboxPackageDB = ".cabal-sandbox/x86_64-osx-ghc-7.10.1-packages.conf.d"
- _pluginFile      = "Example.hs"
+ _pluginFile      = "Example/Plugin.hs"
  _pluginDirectory = "executables"
 
 exampleGhcConfig = defaultGhcConfig{_ghcFatalMessager}

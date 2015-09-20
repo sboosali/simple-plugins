@@ -12,20 +12,15 @@
 
 # Limitations 
 
-* no Template Haskell in plug-in
 * no executable profiling 
 
-if you this error message:
+if you see either of these error messages:
 
     "You can't use Template Haskell with a profiled compiler"
 
-you must remove any Template Haskell from your plug-in. 
-
-if you see this error message:
-
     "You can't call hscCompileCoreExpr in a profiled compiler"
 
-the following command should fix it (run from your plugin's sandbox's directory):
+you have to disable executable profiling, with:
 
     cabal configure --disable-executable-profiling
 
