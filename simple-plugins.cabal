@@ -34,12 +34,14 @@ library
  exposed-modules:
   SimplePlugins
   SimplePlugins.Types
-
+  SimplePlugins.Etc
   
+
  build-depends:
 --  , lens  ==4.12.*
     ghc,
     ghc-paths, 
+--     cabal-ghc-dynflags,
     bin-package-db,
     transformers,
     directory, 

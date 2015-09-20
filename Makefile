@@ -1,4 +1,4 @@
-PACKAGE = commands-core
+PACKAGE = simple-plugins
 VERSION = 0.0.0
 
 HC = cabal exec -- ghc
@@ -34,6 +34,12 @@ test:
 document:
 	cabal haddock
 	open dist/doc/html/$(PACKAGE)/index.html
+
+hyperlink: 
+	cabal haddock --with-haddock="$(HOME)/haddock/.cabal-sandbox/bin/haddock" --haddock-options="--hyperlinked-source"
+#	open dist/doc/html/$(PACKAGE)/index.html
+	open dist/doc/html/$(PACKAGE)/src/SimplePlugins.html
+
 
 style:
 	hlint --hint=HLint.hs  *.hs $(CODE)
