@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase, OverloadedStrings, ScopedTypeVariables, RecordWildCards, DoAndIfThenElse, ConstraintKinds #-}
 module SimplePlugins where
 import           SimplePlugins.Types
--- import           SimplePlugins.Etc
+import           SimplePlugins.Etc
 
 import           System.FilePath
 import           System.FSNotify
@@ -20,23 +20,16 @@ import           Packages
 
 
 
-directoryWatcher :: LoaderConfig -> IO (Chan Event)
-directoryWatcher loaderConfig = do
- channel <- newChan
- _ <- forkDirectoryWatcher channel loaderConfig
- return channel
-
-forkDirectoryWatcher :: Chan Event -> LoaderConfig -> IO ThreadId
-forkDirectoryWatcher channel loaderConfig@LoaderConfig{..} = do
- forkIO$ withManager $ \manager -> do
-     -- start a watching job (in the background)
-     _stopListening <- watchTreeChan
-         manager
-         _pluginDirectory
-         (eventPredicate loaderConfig)
-         channel
-     -- Keep the watcher alive forever
-     forever$ threadDelay (1*1000*1000) 
+directoryWatcher :: Chan Event -> LoaderConfig -> IO ()
+directoryWatcher directoryChannel loaderConfig@LoaderConfig{..} = withManager $ \manager -> do
+ -- start a watching job (in the background)
+ _stopListening <- watchTreeChan
+     manager
+     _pluginDirectory
+     ((&&) <$> (const True) <*> (eventPredicate loaderConfig))
+     directoryChannel 
+ -- Keep the watcher alive forever
+ forever$ threadDelay (1*1000*1000) 
 
 eventPredicate :: LoaderConfig -> Event -> Bool 
 eventPredicate LoaderConfig{..} = \case 
@@ -70,19 +63,20 @@ blockUntil flag = do
      Before recompiling & running, mark that we've started,
      and after we're done running, mark that we're done.
  -}
-recompiler :: (IsPlugin plugin) => proxy plugin -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig -> IO ()
-recompiler proxy pluginChannel loaderConfig ghcConfig = withGHCSession loaderConfig ghcConfig $ do
+reloader 
+ :: (IsPlugin plugin)
+ => proxy plugin -> Chan Event -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig -> IO ()
+reloader proxy watcherChannel pluginChannel loaderConfig ghcConfig = withGHCSession loaderConfig ghcConfig $ do
 
  mainDone  <- liftIO$ newIORef False
  -- Start with a full MVar so we recompile right away.
  recompile <- liftIO$ newMVar ()
 
  -- Watch for changes and recompile whenever they occur
- channel <- liftIO$ directoryWatcher loaderConfig
  _ <- liftIO . forkIO . forever $ do
 
    -- blocks on reading from the channel
-   event <- readChan channel
+   event <- readChan watcherChannel
 
    print event
    putMVar recompile ()
@@ -149,12 +143,15 @@ withGHCSession LoaderConfig{..} GhcConfig{..} action = do
 -- Recompiles the current targets
 recompileTargets :: forall proxy plugin. (IsPlugin plugin) => proxy plugin -> Chan (Maybe plugin) -> GhcConfig -> Ghc ()
 recompileTargets _proxy pluginChannel GhcConfig{..} = handleSourceError printException $ do
+
  -- Get the dependencies of the main target
  graph <- depanal [] False
 
  -- Reload the main target
  loadSuccess <- load LoadAllTargets
- unless (failed loadSuccess) $ do
+ if   failed loadSuccess
+ then liftIO$ print$ s"loading failed"
+ else do
      -- We must parse and typecheck modules before they'll be available for usage
      forM_ graph (typecheckModule <=< parseModule)
       -- Load the dependencies of the main target

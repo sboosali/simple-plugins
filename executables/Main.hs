@@ -12,12 +12,25 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 
 
+-- TODO ignores user interrupt http://neilmitchell.blogspot.com/2015/05/handling-control-c-in-haskell.html
+-- C-c causes "example: user interrupt" not termination 
 main = do
+
+ watcherChannel <- newChan
  pluginChannel <- newChan
- _ <- forkIO$ recompiler pluginProxy pluginChannel exampleLoaderConfig exampleGhcConfig
- forever$ do
-  plugin_ <- readChan pluginChannel
-  reloadPlugin plugin_
+
+ _ <- forkIO$ directoryWatcher watcherChannel exampleLoaderConfig
+
+ _ <- forkIO$ forever$ do
+   event <- readChan watcherChannel  -- blocks on reading from the channel
+   print event
+   withGHCSession exampleLoaderConfig exampleGhcConfig $ do
+    recompileTargets pluginProxy pluginChannel exampleGhcConfig -- event
+
+ _ <- forkIO$ forever$ do
+  readChan pluginChannel >>= reloadPlugin
+
+ forever$ threadDelay 10000000
 
 reloadPlugin :: (Show plugin) => Maybe plugin -> IO ()
 reloadPlugin plugin_ = do 
