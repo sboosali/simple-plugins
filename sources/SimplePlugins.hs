@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase, OverloadedStrings, ScopedTypeVariables, RecordWildCards, DoAndIfThenElse, ConstraintKinds #-}
 module SimplePlugins where
 import           SimplePlugins.Types
-import           SimplePlugins.Etc
+-- import           SimplePlugins.Etc
 
 import           System.FilePath
 import           System.FSNotify
@@ -55,7 +55,7 @@ blockUntil flag = do
 
 
 
--- forkRecompiler :: (Typeable plugin) => proxy plugin -> LoaderConfig -> GhcConfig -> IO ThreadId
+-- forkRecompiler :: (IsPlugin plugin) => proxy plugin -> LoaderConfig -> GhcConfig -> IO ThreadId
 -- forkRecompiler proxy loaderConfig ghcConfig = forkIO$ withGHCSession loaderConfig ghcConfig $ do
 --  error "forkRecompiler" 
 
@@ -70,8 +70,8 @@ blockUntil flag = do
      Before recompiling & running, mark that we've started,
      and after we're done running, mark that we're done.
  -}
-recompiler :: (IsPlugin plugin) => proxy plugin -> LoaderConfig -> GhcConfig -> IO ()
-recompiler proxy loaderConfig ghcConfig = withGHCSession loaderConfig ghcConfig $ do
+recompiler :: (IsPlugin plugin) => proxy plugin -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig -> IO ()
+recompiler proxy pluginChannel loaderConfig ghcConfig = withGHCSession loaderConfig ghcConfig $ do
 
  mainDone  <- liftIO$ newIORef False
  -- Start with a full MVar so we recompile right away.
@@ -95,7 +95,7 @@ recompiler proxy loaderConfig ghcConfig = withGHCSession loaderConfig ghcConfig 
    _ <- liftIO $ takeMVar recompile
 
    liftIO$ writeIORef mainDone False
-   recompileTargets proxy ghcConfig
+   recompileTargets proxy pluginChannel ghcConfig
    liftIO$ writeIORef mainDone True
 
 -- channel of filesystem events -> channel of plug-ins 
@@ -147,8 +147,8 @@ withGHCSession LoaderConfig{..} GhcConfig{..} action = do
 
 
 -- Recompiles the current targets
-recompileTargets :: forall proxy plugin. (IsPlugin plugin) => proxy plugin -> GhcConfig -> Ghc ()
-recompileTargets _proxy GhcConfig{..} = handleSourceError printException $ do
+recompileTargets :: forall proxy plugin. (IsPlugin plugin) => proxy plugin -> Chan (Maybe plugin) -> GhcConfig -> Ghc ()
+recompileTargets _proxy pluginChannel GhcConfig{..} = handleSourceError printException $ do
  -- Get the dependencies of the main target
  graph <- depanal [] False
 
@@ -161,12 +161,6 @@ recompileTargets _proxy GhcConfig{..} = handleSourceError printException $ do
      setContext $ (IIModule . ms_mod_name) <$> graph
 
      -- load the target file's "plugin" identifier
-     dynamic <- dynCompileExpr "plugin"
-     case fromDynamic dynamic of
-      Nothing -> liftIO$ do
-       putStrLn$ s"plugin has wrong type"
-      Just  plugin -> liftIO$ do
-       putStrLn$ s"plugin is being reloaded.."
-       -- reloadPlugin proxy plugin
-       print (plugin::plugin)
+     dynamic <- dynCompileExpr "plugin" -- TODO configurable 
+     liftIO$ writeChan pluginChannel (fromDynamic dynamic)
 

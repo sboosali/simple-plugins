@@ -77,4 +77,5 @@ executable example
   , template-haskell  ==2.10.*
   , pipes-concurrency  ==2.0.*
   , pipes ==4.1.* 
+  , transformers
 

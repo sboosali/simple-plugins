@@ -11,6 +11,7 @@ import           Data.Proxy
 pluginProxy :: Proxy Plugin
 pluginProxy = Proxy
 
+
 plugin :: Plugin
 plugin = Plugin (show 'plugin) 
 -- plugin = Plugin (show 'plugin ++ " reloaded") 

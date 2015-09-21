@@ -12,7 +12,7 @@ data Plugin = Plugin String
 -- data Plugin a = Plugin a
  deriving (Show,Eq,Ord)
 
-type IsPlugin a = (Typeable a, Show a) 
+type IsPlugin a = (Typeable a) 
 
 {- |
 
