@@ -42,6 +42,7 @@ library
     pipes ==4.1.*, 
     pipes-concurrency  ==2.0.*, 
 --  , lens  ==4.12.*
+    tagged, 
 
     transformers,
     directory, 
@@ -78,4 +79,5 @@ executable example
   , pipes-concurrency  ==2.0.*
   , pipes ==4.1.* 
   , transformers
+  , tagged
 

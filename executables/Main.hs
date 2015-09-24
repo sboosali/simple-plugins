@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards, NamedFieldPuns    #-}
 {-# OPTIONS_GHC -O0 -fno-warn-missing-signatures -fno-warn-partial-type-signatures #-}
-import           Example.Plugin
+-- import           Example.Plugin
 
 import           SimplePlugins
 import           SimplePlugins.Types 
@@ -22,10 +22,10 @@ main = do
  _ <- forkIO$ directoryWatcher watcherChannel exampleLoaderConfig
 
  _ <- forkIO$ forever$ do
-   event <- readChan watcherChannel  -- blocks on reading from the channel
+   event <- readChan watcherChannel  -- blocks on reading from the channel                       
    print event
    withGHCSession exampleLoaderConfig exampleGhcConfig $ do
-    recompileTargets pluginProxy pluginChannel exampleGhcConfig -- event
+    recompileTargets pluginChannel exampleGhcConfig exampleIdentifier -- event
 
  _ <- forkIO$ forever$ do
   readChan pluginChannel >>= reloadPlugin
@@ -33,16 +33,18 @@ main = do
  forever$ threadDelay 10000000
 
 reloadPlugin :: (Show plugin) => Maybe plugin -> IO ()
-reloadPlugin plugin_ = do 
+reloadPlugin p_ = do 
   replicateM_ 5 (putStrLn"")
   putStrLn$ "-------------------------------------------------------------------------"
   putStrLn$ "reloading plugin..."
-  case plugin_ of 
+  case p_ of 
       Nothing -> liftIO$ do
        putStrLn$ s"failure in plugin reloading: plugin has wrong type"
-      Just plugin -> liftIO$ do
+      Just p -> liftIO$ do
        putStrLn$ s"success in plugin reloading"
-       print plugin 
+       print p 
+
+exampleIdentifier = Identifier "plugin" :: Identifier String
 
 exampleLoaderConfig = (defaultLoaderConfig sandboxPackageDB){_pluginFile, _pluginDirectory}
  where

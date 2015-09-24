@@ -3,21 +3,11 @@
 module Example.Plugin where
 -- import Example.Extras
 
-import           SimplePlugins.Types
 
-import           Data.Proxy
+plugin = (show 'plugin)         -- TemplateHaskell works 
+-- plugin = (show 'plugin ++ " reloaded") 
 
-
-pluginProxy :: Proxy Plugin
-pluginProxy = Proxy
-
-
-plugin :: Plugin
-plugin = Plugin (show 'plugin) 
--- plugin = Plugin (show 'plugin ++ " reloaded") 
-
--- plugin = Plugin "reloaded" -- it sees the change
 -- plugin =                   -- it prints the parse error
 -- plugin = 0 + ""            -- it prints the type error
 -- plugin = 0                 -- it prints the runtime cast (to String) error
-
+-- plugin = "reloaded" -- it sees the change

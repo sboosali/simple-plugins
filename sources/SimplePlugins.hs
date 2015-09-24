@@ -65,8 +65,8 @@ blockUntil flag = do
  -}
 reloader 
  :: (IsPlugin plugin)
- => proxy plugin -> Chan Event -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig -> IO ()
-reloader proxy watcherChannel pluginChannel loaderConfig ghcConfig = withGHCSession loaderConfig ghcConfig $ do
+ => Chan Event -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig -> Identifier plugin -> IO ()
+reloader watcherChannel pluginChannel loaderConfig ghcConfig identifier = withGHCSession loaderConfig ghcConfig $ do
 
  mainDone  <- liftIO$ newIORef False
  -- Start with a full MVar so we recompile right away.
@@ -89,7 +89,7 @@ reloader proxy watcherChannel pluginChannel loaderConfig ghcConfig = withGHCSess
    _ <- liftIO $ takeMVar recompile
 
    liftIO$ writeIORef mainDone False
-   recompileTargets proxy pluginChannel ghcConfig
+   recompileTargets pluginChannel ghcConfig identifier
    liftIO$ writeIORef mainDone True
 
 -- channel of filesystem events -> channel of plug-ins 
@@ -141,8 +141,8 @@ withGHCSession LoaderConfig{..} GhcConfig{..} action = do
 
 
 -- Recompiles the current targets
-recompileTargets :: forall proxy plugin. (IsPlugin plugin) => proxy plugin -> Chan (Maybe plugin) -> GhcConfig -> Ghc ()
-recompileTargets _proxy pluginChannel GhcConfig{..} = handleSourceError printException $ do
+recompileTargets :: forall plugin. (IsPlugin plugin) => Chan (Maybe plugin) -> GhcConfig -> Identifier plugin -> Ghc ()
+recompileTargets pluginChannel GhcConfig{..} (Identifier identifier) = handleSourceError _ghcPrintSourceError $ do
 
  -- Get the dependencies of the main target
  graph <- depanal [] False
@@ -157,7 +157,8 @@ recompileTargets _proxy pluginChannel GhcConfig{..} = handleSourceError printExc
       -- Load the dependencies of the main target
      setContext $ (IIModule . ms_mod_name) <$> graph
 
-     -- load the target file's "plugin" identifier
-     dynamic <- dynCompileExpr "plugin" -- TODO configurable 
+     -- load the target file's identifier
+     dynamic <- dynCompileExpr identifier 
      liftIO$ writeChan pluginChannel (fromDynamic dynamic)
 
+recompileTargets _ _ _ = error "recompileTargets: PatternSynonyms exhaustive testing is to conservative"

@@ -1,5 +1,7 @@
-{-# LANGUAGE AutoDeriveTypeable, RecordWildCards, ConstraintKinds  #-}
+{-# LANGUAGE AutoDeriveTypeable, RecordWildCards, ConstraintKinds, PatternSynonyms  #-}
 module SimplePlugins.Types where
+
+import Data.Tagged
 
 import Data.Typeable
 
@@ -8,16 +10,17 @@ import HscTypes (SourceError)
 import GhcMonad (Ghc, printException)
 
 
-data Plugin = Plugin String
--- data Plugin a = Plugin a
- deriving (Show,Eq,Ord)
+-- | an identifier tagged with the plugin type (it will be casted into, when reloaded) 
+type Identifier a = Tagged a String
 
+-- | e.g. @(Identifier "myPlugin" :: Identifier MyPlugin)@
+-- (uses @PatternSynonyms@)
+pattern Identifier s = Tagged s
+
+-- | the constraints a plugin type should satisfy (uses @ConstraintKinds@)
 type IsPlugin a = (Typeable a) 
 
 {- |
-
-@
-@
 
 -}
 data LoaderConfig = LoaderConfig
@@ -30,11 +33,12 @@ data LoaderConfig = LoaderConfig
  , _extraPackageDBs  :: [FilePath] -- ^ any extra package databases you want, like stack's
  } deriving(Show,Eq,Ord)
 
+-- | 
 data GhcConfig = GhcConfig 
  { _ghcCompilationVerbosity :: Int  -- ^ @3@ is like @ghc -v@, useful for debugging
  , _ghcFatalMessager     :: String -> IO () -- ^ by default, prints error messages to 'stderr'
  , _ghcFlushOut          :: IO ()           -- ^ by default, flushes 'stdout'
- , _printSourceError     :: SourceError -> Ghc () -- ^ 
+ , _ghcPrintSourceError  :: SourceError -> Ghc () -- ^ 
  }
 
 -- | uses relative paths. takes the platform specific _sandboxPackageDB. 
@@ -55,5 +59,5 @@ defaultGhcConfig = GhcConfig{..}
  _ghcCompilationVerbosity = 1
  _ghcFatalMessager        = defaultFatalMessager
  FlushOut _ghcFlushOut    = defaultFlushOut        -- user avoids GHC library dependency 
- _printSourceError        = printException
+ _ghcPrintSourceError     = printException
 
