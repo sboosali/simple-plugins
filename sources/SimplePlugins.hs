@@ -12,15 +12,24 @@ import           Control.Concurrent
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Dynamic
-import           Data.IORef
+-- import           Data.IORef
+import Control.Exception (getMaskingState) 
 
 import           DynFlags
 import           GHC            -- TODO import explicitly 
-import HscTypes (SourceError) 
+-- import HscTypes (SourceError) 
 import           GHC.Paths
 import           Linker
 import           Packages
 
+
+pluginReloader :: (IsPlugin plugin) => Chan Event -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig -> Identifier plugin -> IO ()
+pluginReloader watcherChannel pluginChannel loaderConfig ghcConfig identifier
+ = withGHCSession loaderConfig ghcConfig $ forever$ do
+       _event <- liftIO$ readChan watcherChannel  -- blocks on reading from the channel                       
+       plugin' <- recompileTargets ghcConfig identifier
+       liftIO$ writeChan pluginChannel plugin'
+       liftIO$ threadDelay (1*1000*1000) 
 
 
 directoryWatcher :: Chan Event -> LoaderConfig -> IO ()
@@ -40,65 +49,22 @@ eventPredicate LoaderConfig{..} = \case
  Added    path _ -> takeExtension path `elem` _pluginExtensions
  Removed  path _ -> takeExtension path `elem` _pluginExtensions
 
-blockUntil :: IORef Bool -> IO ()
-blockUntil flag = do   
-  isDone <- readIORef flag
-  if   isDone
-  then return ()
-  else do
-   threadDelay (1*1000)
-   blockUntil flag
 
+pluginUpdater :: Chan (Maybe plugin) -> (Maybe plugin -> IO ()) -> IO ()
+pluginUpdater pluginChannel updatePlugin = forever$ do
+  readChan pluginChannel >>= updatePlugin
+  threadDelay (1*1000*1000)   
 
-
--- forkRecompiler :: (IsPlugin plugin) => proxy plugin -> LoaderConfig -> GhcConfig -> IO ThreadId
--- forkRecompiler proxy loaderConfig ghcConfig = forkIO$ withGHCSession loaderConfig ghcConfig $ do
---  error "forkRecompiler" 
-
-
-
- {-
- Watcher:
-     Tell the main thread to recompile.
-     If the main thread isn't done yet, kill it.
- Compiler:
-     Wait for the signal to recompile.
-     Before recompiling & running, mark that we've started,
-     and after we're done running, mark that we're done.
- -}
-reloader 
- :: (IsPlugin plugin)
- => Chan Event -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig -> Identifier plugin -> IO ()
-reloader watcherChannel pluginChannel loaderConfig ghcConfig identifier = withGHCSession loaderConfig ghcConfig $ do
-
- mainDone  <- liftIO$ newIORef False
- -- Start with a full MVar so we recompile right away.
- recompile <- liftIO$ newMVar ()
-
- -- Watch for changes and recompile whenever they occur
- _ <- liftIO . forkIO . forever $ do
-
-   -- blocks on reading from the channel
-   event <- readChan watcherChannel
-
-   print event
-   putMVar recompile ()
-   blockUntil mainDone           -- NOTE the GhcMonad is stateful, thus, it must be accessed linearly
-
- -- Start up the app
- forever$ do
-
-   -- blocks on reading from the mutable variable 
-   _ <- liftIO $ takeMVar recompile
-
-   liftIO$ writeIORef mainDone False
-   plugin' <- recompileTargets ghcConfig identifier
-   liftIO$ writeChan pluginChannel plugin'
-   liftIO$ writeIORef mainDone True
-
--- channel of filesystem events -> channel of plug-ins 
-
-
+-- | converts a stream of file system changes to a stream of plugins 
+pluginWatcher :: (IsPlugin plugin) => Chan Event -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig -> Identifier plugin -> IO ()
+pluginWatcher watcherChannel pluginChannel loaderConfig ghcConfig identifier = forever$ do
+   _event <- readChan watcherChannel  -- blocks on reading from the channel                       
+   forkIO$ do
+       plugin' <- withGHCSession loaderConfig ghcConfig $ do
+           liftIO$ print =<< getMaskingState
+           recompileTargets ghcConfig identifier -- event
+       writeChan pluginChannel plugin'
+   threadDelay (1*1000*1000) 
 
 
 withGHCSession :: LoaderConfig -> GhcConfig -> Ghc a -> IO a 
@@ -172,15 +138,4 @@ recompileTargets GhcConfig{..} (Tagged identifier) = let _ghcPrintSourceError' e
      -- load the target file's identifier
      dynamic <- dynCompileExpr identifier 
      return$ fromDynamic dynamic
-
--- (\(e :: SourceError) -> Left (LoadError e))
--- (\(e :: SourceError) -> Left (ParseError e))
--- (\(e :: SourceError) -> Left (TypecheckError e))
-
--- recompileTargets _ _ _ = error "recompileTargets: PatternSynonyms exhaustive testing is to conservative"
-
-data CompilerError
- = LoadError SourceError
- | ParseError SourceError
- | TypecheckError SourceError
 

@@ -3,7 +3,6 @@
 module Example.Plugin where
 -- import Example.Extras
 
-
 plugin = (show 'plugin)         -- TemplateHaskell works 
 -- plugin = (show 'plugin ++ " reloaded") 
 
