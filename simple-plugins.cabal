@@ -43,6 +43,7 @@ library
     pipes-concurrency  ==2.0.*, 
 --  , lens  ==4.12.*
     tagged, 
+    either, 
 
     transformers,
     directory, 
