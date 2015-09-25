@@ -24,13 +24,16 @@ main = do
  _ <- forkIO$ forever$ do
    event <- readChan watcherChannel  -- blocks on reading from the channel                       
    print event
-   withGHCSession exampleLoaderConfig exampleGhcConfig $ do
-    recompileTargets pluginChannel exampleGhcConfig exampleIdentifier -- event
+   plugin' <- withGHCSession exampleLoaderConfig exampleGhcConfig $ do
+    recompileTargets exampleGhcConfig exampleIdentifier -- event
+   writeChan pluginChannel plugin'
+   threadDelay (1*1000*1000) 
 
  _ <- forkIO$ forever$ do
   readChan pluginChannel >>= reloadPlugin
+  threadDelay (1*1000*1000)   
 
- forever$ threadDelay 10000000
+ forever$ threadDelay (1*1000*1000) 
 
 reloadPlugin :: (Show plugin) => Maybe plugin -> IO ()
 reloadPlugin p_ = do 

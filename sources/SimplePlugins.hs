@@ -1,10 +1,12 @@
-{-# LANGUAGE LambdaCase, OverloadedStrings, ScopedTypeVariables, RecordWildCards, DoAndIfThenElse, ConstraintKinds #-}
+{-# LANGUAGE LambdaCase, OverloadedStrings, ScopedTypeVariables, RecordWildCards, DoAndIfThenElse, ConstraintKinds, GeneralizedNewtypeDeriving #-}
 module SimplePlugins where
 import           SimplePlugins.Types
-import           SimplePlugins.Etc
+-- import           SimplePlugins.Etc
 
 import           System.FilePath
 import           System.FSNotify
+import Data.Tagged
+-- import Control.Monad.Trans.Either
 
 import           Control.Concurrent
 import           Control.Monad
@@ -13,7 +15,8 @@ import           Data.Dynamic
 import           Data.IORef
 
 import           DynFlags
-import           GHC
+import           GHC            -- TODO import explicitly 
+import HscTypes (SourceError) 
 import           GHC.Paths
 import           Linker
 import           Packages
@@ -89,7 +92,8 @@ reloader watcherChannel pluginChannel loaderConfig ghcConfig identifier = withGH
    _ <- liftIO $ takeMVar recompile
 
    liftIO$ writeIORef mainDone False
-   recompileTargets pluginChannel ghcConfig identifier
+   plugin' <- recompileTargets ghcConfig identifier
+   liftIO$ writeChan pluginChannel plugin'
    liftIO$ writeIORef mainDone True
 
 -- channel of filesystem events -> channel of plug-ins 
@@ -97,7 +101,7 @@ reloader watcherChannel pluginChannel loaderConfig ghcConfig identifier = withGH
 
 
 
-withGHCSession :: LoaderConfig -> GhcConfig -> Ghc () -> IO ()
+withGHCSession :: LoaderConfig -> GhcConfig -> Ghc a -> IO a 
 withGHCSession LoaderConfig{..} GhcConfig{..} action = do
  defaultErrorHandler _ghcFatalMessager (FlushOut _ghcFlushOut) $ runGhc (Just libdir) $ do
 
@@ -140,25 +144,43 @@ withGHCSession LoaderConfig{..} GhcConfig{..} action = do
   action
 
 
+
 -- Recompiles the current targets
-recompileTargets :: forall plugin. (IsPlugin plugin) => Chan (Maybe plugin) -> GhcConfig -> Identifier plugin -> Ghc ()
-recompileTargets pluginChannel GhcConfig{..} (Identifier identifier) = handleSourceError _ghcPrintSourceError $ do
+recompileTargets :: forall plugin. (IsPlugin plugin) => GhcConfig -> Identifier plugin -> Ghc (Maybe plugin)
+recompileTargets GhcConfig{..} (Tagged identifier) = let _ghcPrintSourceError' e = _ghcPrintSourceError e >> return Nothing in handleSourceError _ghcPrintSourceError' $ do
+
+-- FilePath ->
+--   -- Set the given filename as a compilation target
+--   setTargets =<< sequence [guessTarget pluginPath Nothing]
 
  -- Get the dependencies of the main target
- graph <- depanal [] False
+ rawDependencies <- depanal [] False
 
  -- Reload the main target
  loadSuccess <- load LoadAllTargets
  if   failed loadSuccess
- then liftIO$ print$ s"loading failed"
+ then return Nothing
  else do
+
      -- We must parse and typecheck modules before they'll be available for usage
-     forM_ graph (typecheckModule <=< parseModule)
-      -- Load the dependencies of the main target
-     setContext $ (IIModule . ms_mod_name) <$> graph
+     _parsedDependencies      <- traverse parseModule     rawDependencies
+     _typecheckedDependencies <- traverse typecheckModule _parsedDependencies
+
+     -- Load the dependencies of the main target
+     setContext $ (IIModule . ms_mod_name) <$> rawDependencies 
 
      -- load the target file's identifier
      dynamic <- dynCompileExpr identifier 
-     liftIO$ writeChan pluginChannel (fromDynamic dynamic)
+     return$ fromDynamic dynamic
 
-recompileTargets _ _ _ = error "recompileTargets: PatternSynonyms exhaustive testing is to conservative"
+-- (\(e :: SourceError) -> Left (LoadError e))
+-- (\(e :: SourceError) -> Left (ParseError e))
+-- (\(e :: SourceError) -> Left (TypecheckError e))
+
+-- recompileTargets _ _ _ = error "recompileTargets: PatternSynonyms exhaustive testing is to conservative"
+
+data CompilerError
+ = LoadError SourceError
+ | ParseError SourceError
+ | TypecheckError SourceError
+
