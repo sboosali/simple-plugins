@@ -6,17 +6,14 @@ import           SimplePlugins
 import           SimplePlugins.Types 
 import           SimplePlugins.Etc
 
--- import qualified SlaveThread as Slave 
 import System.Signal
+-- import qualified SlaveThread as Slave 
 -- import           System.FSNotify
 
 import Control.Concurrent
 import           Control.Monad
 import           Control.Monad.IO.Class
 import Control.Exception
--- import Control.Exception (throw) 
--- import Control.Exception (getMaskingState) 
--- import System.IO (hPutStrLn,stderr) 
 
 
 -- TODO ignores user interrupt http://neilmitchell.blogspot.com/2015/05/handling-control-c-in-haskell.html
