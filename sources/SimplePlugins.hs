@@ -1,13 +1,14 @@
-{-# LANGUAGE LambdaCase, OverloadedStrings, ScopedTypeVariables, RecordWildCards, DoAndIfThenElse, ConstraintKinds, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase, OverloadedStrings, ScopedTypeVariables, RecordWildCards, DoAndIfThenElse, ConstraintKinds, TypeFamilies #-}
 module SimplePlugins where
 import           SimplePlugins.Types
--- import           SimplePlugins.Etc
+import           SimplePlugins.Etc
 
 import           System.FilePath
 import           System.FSNotify
 import Data.Tagged
 -- import Control.Monad.Trans.Either
 
+-- import Data.Coerce
 import           Control.Concurrent
 import           Control.Monad
 import           Control.Monad.IO.Class
@@ -23,7 +24,7 @@ import           Linker
 import           Packages
 
 
-pluginReloader :: (IsPlugin plugin) => Chan Event -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig -> Identifier plugin -> IO ()
+pluginReloader :: (IsPlugin plugin, m ~ SaferGhc) => Chan Event -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig m -> Identifier plugin -> IO ()
 pluginReloader watcherChannel pluginChannel loaderConfig ghcConfig identifier
  = withGHCSession loaderConfig ghcConfig $ forever$ do
        _event <- liftIO$ readChan watcherChannel  -- blocks on reading from the channel                       
@@ -41,7 +42,7 @@ directoryWatcher directoryChannel loaderConfig@LoaderConfig{..} = withManager $ 
      ((&&) <$> (const True) <*> (eventPredicate loaderConfig))
      directoryChannel 
  -- Keep the watcher alive forever
- forever$ threadDelay (1*1000*1000) 
+ keepAlive$ return() 
 
 eventPredicate :: LoaderConfig -> Event -> Bool 
 eventPredicate LoaderConfig{..} = \case 
@@ -51,33 +52,40 @@ eventPredicate LoaderConfig{..} = \case
 
 
 pluginUpdater :: Chan (Maybe plugin) -> (Maybe plugin -> IO ()) -> IO ()
-pluginUpdater pluginChannel updatePlugin = forever$ do
+pluginUpdater pluginChannel updatePlugin = keepAlive$ do
   readChan pluginChannel >>= updatePlugin
-  threadDelay (1*1000*1000)   
 
 -- | converts a stream of file system changes to a stream of plugins 
-pluginWatcher :: (IsPlugin plugin) => Chan Event -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig -> Identifier plugin -> IO ()
+pluginWatcher :: forall plugin m. (IsPlugin plugin, SaferGhc ~ m) => Chan Event -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig m -> Identifier plugin -> IO ()
 pluginWatcher watcherChannel pluginChannel loaderConfig ghcConfig identifier = forever$ do
    _event <- readChan watcherChannel  -- blocks on reading from the channel                       
-   forkIO$ do
+   _ <- forkIO$ do
        plugin' <- withGHCSession loaderConfig ghcConfig $ do
            liftIO$ print =<< getMaskingState
            recompileTargets ghcConfig identifier -- event
        writeChan pluginChannel plugin'
    threadDelay (1*1000*1000) 
 
+{- | sets the right 'DynFlags'.   
 
-withGHCSession :: LoaderConfig -> GhcConfig -> Ghc a -> IO a 
+see <https://github.com/ghc/ghc/blob/089b72f524a6a7564346baca9595fcd07081ec40/compiler/main/DynFlags.hs#L694 DynFlags>
+
+see <https://github.com/ghc/ghc/blob/06d46b1e4507e09eb2a7a04998a92610c8dc6277/compiler/main/GHC.hs#L367 defaultErrorHandler> 
+
+
+-}
+withGHCSession :: (SaferGhc ~ m) => LoaderConfig -> GhcConfig m -> m a -> IO a
+-- withGHCSession :: (GhcMonad m) => LoaderConfig -> GhcConfig -> m a -> IO a 
 withGHCSession LoaderConfig{..} GhcConfig{..} action = do
- defaultErrorHandler _ghcFatalMessager (FlushOut _ghcFlushOut) $ runGhc (Just libdir) $ do
+ defaultErrorHandler _ghcFatalMessager (FlushOut _ghcFlushOut) $ (runGhc) (Just libdir) $ do
 
+  -- derived configuration 
   let pluginPath = _pluginDirectory ++ "/" ++ _pluginFile
+  let packageDBs = [PkgConfFile _sandboxPackageDB, PkgConfFile _inplacePackageDB]
 
   -- Get the default dynFlags
   dflags0 <- getSessionDynFlags
 
-  -- If there's a sandbox, add its package databases
-  let packageDBs = [PkgConfFile _sandboxPackageDB, PkgConfFile _inplacePackageDB]
   let dflags1 = dflags0 { extraPkgConfs = (packageDBs ++) . extraPkgConfs dflags0 }
 
   -- Make sure we're configured for live-reload, and turn off the GHCi sandbox
@@ -92,6 +100,7 @@ withGHCSession LoaderConfig{..} GhcConfig{..} action = do
                         , ghcMode   = CompManager
                         , importPaths = [dropFileName pluginPath]
                         , verbosity   = _ghcCompilationVerbosity
+                        -- , log_action  = TODO 
                         } `gopt_unset` Opt_GhciSandbox
                         -- `gopt_set` Opt_BuildingCabalPackage -- ?
 
@@ -107,12 +116,13 @@ withGHCSession LoaderConfig{..} GhcConfig{..} action = do
   -- Set the given filename as a compilation target
   setTargets =<< sequence [guessTarget pluginPath Nothing]
 
-  action
+  runSaferGhc action
 
 
 
 -- Recompiles the current targets
-recompileTargets :: forall plugin. (IsPlugin plugin) => GhcConfig -> Identifier plugin -> Ghc (Maybe plugin)
+recompileTargets :: (IsPlugin plugin, GhcMonad m) => GhcConfig m -> Identifier plugin -> m (Maybe plugin)
+-- recompileTargets :: (IsPlugin plugin, GhcMonad m) => GhcConfig -> Identifier plugin -> m (Maybe plugin)
 recompileTargets GhcConfig{..} (Tagged identifier) = let _ghcPrintSourceError' e = _ghcPrintSourceError e >> return Nothing in handleSourceError _ghcPrintSourceError' $ do
 
 -- FilePath ->
@@ -138,4 +148,15 @@ recompileTargets GhcConfig{..} (Tagged identifier) = let _ghcPrintSourceError' e
      -- load the target file's identifier
      dynamic <- dynCompileExpr identifier 
      return$ fromDynamic dynamic
+
+{-| TODO
+You can set the log_action field of the session's DynFlags to a custom
+handler. Its value is
+
+type LogAction = Severity -> SrcSpan -> PprStyle -> Message -> IO ()
+
+The Severity parameter will let you tell whether a message is a
+warning or an error.
+
+-} 
 

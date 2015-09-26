@@ -6,31 +6,41 @@ import           SimplePlugins
 import           SimplePlugins.Types 
 import           SimplePlugins.Etc
 
+-- import qualified SlaveThread as Slave 
+-- import System.Signal
 -- import           System.FSNotify
 
--- import System.IO (hPutStrLn,stderr) 
 import Control.Concurrent
 import           Control.Monad
 import           Control.Monad.IO.Class
+-- import Control.Exception
 -- import Control.Exception (throw) 
 -- import Control.Exception (getMaskingState) 
+-- import System.IO (hPutStrLn,stderr) 
 
 
 -- TODO ignores user interrupt http://neilmitchell.blogspot.com/2015/05/handling-control-c-in-haskell.html
 -- C-c causes "example: user interrupt" not termination 
 main = do
 
+ let fork = forkIO              --  Slave.fork
+
  watcherChannel <- newChan
  pluginChannel <- newChan
 
- _ <- forkIO$ directoryWatcher watcherChannel exampleLoaderConfig
+ _mainThread <- myThreadId
+ -- _ <- installHandler sigINT (\_ -> throwTo _mainThread UserInterrupt)
 
- _ <- forkIO$ pluginUpdater pluginChannel exampleUpdatePlugin
+ _watcherThread  <- fork$ directoryWatcher watcherChannel exampleLoaderConfig
 
- -- _ <- forkIO$ pluginWatcher watcherChannel pluginChannel exampleLoaderConfig exampleGhcConfig exampleIdentifier
+ _updaterThread  <- fork$ pluginUpdater pluginChannel exampleUpdatePlugin
 
- pluginReloader watcherChannel pluginChannel exampleLoaderConfig exampleGhcConfig exampleIdentifier
+ _reloaderThread <- fork$ pluginWatcher watcherChannel pluginChannel exampleLoaderConfig exampleGhcConfig exampleIdentifier
 
+ -- pluginReloader watcherChannel pluginChannel exampleLoaderConfig exampleGhcConfig exampleIdentifier
+ keepAlive$ return() 
+
+-- pluginThreads
 
 -- | 
 exampleUpdatePlugin :: (Show plugin) => Maybe plugin -> IO ()

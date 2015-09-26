@@ -2,7 +2,9 @@ module SimplePlugins.Etc where
 
 import           Data.Typeable
 
+import           Control.Monad
 import           Control.Monad.IO.Class
+import Control.Concurrent
 
 import           GHC
 import           Fingerprint
@@ -31,3 +33,9 @@ output a = do
     let style = defaultUserStyle
     let cntx  = initSDocContext dfs style
     liftIO $ print $ runSDoc (ppr a) cntx
+
+keepAlive :: IO b -> IO a
+keepAlive action = forever$ do
+ _ <- action 
+ threadDelay (1*1000*1000) 
+
