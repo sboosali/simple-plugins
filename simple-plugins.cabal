@@ -45,7 +45,7 @@ library
 --  , lens  ==4.12.*
     tagged, 
 --    either, 
---    signal, 
+   signal, 
 --    slave-thread, 
 
     transformers,

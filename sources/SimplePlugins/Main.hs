@@ -7,13 +7,13 @@ import           SimplePlugins.Types
 import           SimplePlugins.Etc
 
 -- import qualified SlaveThread as Slave 
--- import System.Signal
+import System.Signal
 -- import           System.FSNotify
 
 import Control.Concurrent
 import           Control.Monad
 import           Control.Monad.IO.Class
--- import Control.Exception
+import Control.Exception
 -- import Control.Exception (throw) 
 -- import Control.Exception (getMaskingState) 
 -- import System.IO (hPutStrLn,stderr) 
@@ -29,7 +29,6 @@ main = do
  pluginChannel <- newChan
 
  _mainThread <- myThreadId
- -- _ <- installHandler sigINT (\_ -> throwTo _mainThread UserInterrupt)
 
  _watcherThread  <- fork$ directoryWatcher watcherChannel exampleLoaderConfig
 
@@ -37,10 +36,21 @@ main = do
 
  _reloaderThread <- fork$ pluginWatcher watcherChannel pluginChannel exampleLoaderConfig exampleGhcConfig exampleIdentifier
 
- -- pluginReloader watcherChannel pluginChannel exampleLoaderConfig exampleGhcConfig exampleIdentifier
- keepAlive$ return() 
+ -- _ <- installHandler sigINT (handleInterrupt [_watcherThread,_updaterThread,_reloaderThread,_mainThread])
+
+ -- `installInterruptHandler` must run after `initGhcMonad`
+ keepAlive$ installInterruptHandler
 
 -- pluginThreads
+
+installInterruptHandler = installHandler sigINT (handleInterrupt [_watcherThread,_updaterThread,_reloaderThread,_mainThread]))
+
+handleInterrupt threadIds signal = do
+ print$ "CAUGHT SIGNAL: " ++ show signal 
+ _ <- traverse (\t -> throwTo t UserInterrupt) threadIds
+ -- _ <- traverse killThread threadIds
+ print$ "THROWING INTERRUPT"
+ throw UserInterrupt
 
 -- | 
 exampleUpdatePlugin :: (Show plugin) => Maybe plugin -> IO ()
