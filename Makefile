@@ -4,6 +4,7 @@ VERSION = 0.0.0
 HC = cabal exec -- ghc
 
 CODE = sources # tests
+EXECUTABLE = example
 
 
 # # # # # # # # # # # # # # # # # # 
@@ -49,7 +50,7 @@ fix:
 
 check:
 #	cabal build --ghc-options="-fforce-recomp -fno-code"
-	cabal build --ghc-options="-fno-code"
+	cabal build $(EXECUTABLE) --ghc-options="-fno-code"
 
 
 # # # # # # # # # # # # # # # # # # 

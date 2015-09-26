@@ -61,9 +61,8 @@ pluginUpdater pluginChannel updatePlugin = keepAlive$ do
 pluginWatcher :: forall plugin m. (IsPlugin plugin, SaferGhc ~ m) => Chan Event -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig m -> Identifier plugin -> IO ()
 pluginWatcher watcherChannel pluginChannel loaderConfig ghcConfig identifier = forever$ do
    _event <- readChan watcherChannel  -- blocks on reading from the channel                       
-   _ <- forkIO$ do                    -- TODO
-       plugin' <- withGHCSession loaderConfig ghcConfig $ recompileTargets ghcConfig identifier -- TODO event
-       writeChan pluginChannel plugin'
+   plugin' <- withGHCSession loaderConfig ghcConfig $ recompileTargets ghcConfig identifier -- TODO event
+   writeChan pluginChannel plugin'
    threadDelay (1*1000*1000) 
 
 {- | sets the right 'DynFlags'.   
@@ -77,7 +76,7 @@ see <https://github.com/ghc/ghc/blob/06d46b1e4507e09eb2a7a04998a92610c8dc6277/co
 withGHCSession :: (SaferGhc ~ m) => LoaderConfig -> GhcConfig m -> m a -> IO a
 -- withGHCSession :: (GhcMonad m) => LoaderConfig -> GhcConfig -> m a -> IO a 
 withGHCSession LoaderConfig{..} GhcConfig{..} action = do
- defaultErrorHandler _ghcFatalMessager (FlushOut _ghcFlushOut) $ (runGhc') (Just libdir) $ do
+ defaultErrorHandler _ghcFatalMessager (FlushOut _ghcFlushOut) $ (runGhc) (Just libdir) $ do
 
   -- -- `installInterruptHandler` must run after `initGhcMonad` (which is run in `runGhc`) 
   -- liftIO$ installHandler sigINT (\_ -> throw UserInterrupt)

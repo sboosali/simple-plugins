@@ -20,6 +20,9 @@ import qualified Panic
 import qualified GhcMonad
 
 
+either2maybe :: Either e a -> Maybe a 
+either2maybe = either (const Nothing) Just 
+
 -- for OverloadedStrings
 s :: String -> String
 s = id

@@ -15,6 +15,17 @@ import           DynFlags (HasDynFlags(..))
 import           GHC () 
 
 
+{- |
+
+-}
+type PluginReloader = IO () 
+
+{- |
+
+-}
+type UpdatePlugin plugin = (Maybe plugin -> IO ())
+-- newtype UpdatePlugin plugin = UpdatePlugin (Maybe plugin -> IO ())
+
 -- | an identifier tagged with the plugin type (it will be casted into, when reloaded) 
 type Identifier a = Tagged a String
 
