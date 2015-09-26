@@ -36,6 +36,7 @@ library
   SimplePlugins.Types
   SimplePlugins.Etc
   SimplePlugins.Main
+  SimplePlugins.Cabal
   
 
  build-depends:
@@ -48,6 +49,7 @@ library
    signal, 
 --    slave-thread, 
 
+    Cabal ==1.22.*,  
     transformers,
     directory, 
     filepath, 
