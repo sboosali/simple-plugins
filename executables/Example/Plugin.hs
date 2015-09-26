@@ -10,3 +10,6 @@ plugin = (show 'plugin)         -- TemplateHaskell works
 -- plugin = 0 + ""            -- it prints the type error
 -- plugin = 0                 -- it prints the runtime cast (to String) error
 -- plugin = "reloaded" -- it sees the change
+
+function = (,)
+

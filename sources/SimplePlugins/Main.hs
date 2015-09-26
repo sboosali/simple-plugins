@@ -36,14 +36,11 @@ main = do
 
  _reloaderThread <- fork$ pluginWatcher watcherChannel pluginChannel exampleLoaderConfig exampleGhcConfig exampleIdentifier
 
- -- _ <- installHandler sigINT (handleInterrupt [_watcherThread,_updaterThread,_reloaderThread,_mainThread])
-
  -- `installInterruptHandler` must run after `initGhcMonad`
+ let installInterruptHandler = installHandler sigINT (handleInterrupt [_watcherThread,_updaterThread,_reloaderThread,_mainThread])
  keepAlive$ installInterruptHandler
 
 -- pluginThreads
-
-installInterruptHandler = installHandler sigINT (handleInterrupt [_watcherThread,_updaterThread,_reloaderThread,_mainThread]))
 
 handleInterrupt threadIds signal = do
  print$ "CAUGHT SIGNAL: " ++ show signal 
@@ -81,4 +78,23 @@ exampleGhcConfig = defaultGhcConfig
 --   -- we're running GHC from a non-main thread. we should rethrow asynchronous exceptions.  
 
 exampleIdentifier = Identifier "plugin" :: Identifier String
+-- exampleIdentifier = Identifier (globalName 'plugin) :: Identifier String
+-- globalName :: Name -> String
 
+
+exampleUpdatePlugin2  :: Maybe (Int -> (Int,Int)) -> IO ()
+exampleUpdatePlugin2 p_ = do 
+  replicateM_ 5 (putStrLn"")
+  -- putStrLn$ "-------------------------------------------------------------------------"
+  -- putStrLn$ "reloading plugin..."
+  case p_ of 
+      Nothing -> liftIO$ do
+       putStrLn$ s"failure in plugin reloading: plugin has wrong type"
+      Just p -> liftIO$ do
+       putStrLn$ s"success in plugin reloading"
+       print$ p 0
+
+exampleIdentifier2 = Identifier "function" :: Identifier (Int -> (Int,Int))
+
+-- when the plug-in is polymorphic, like (a -> (a,a)), we get an ambiguity or :
+-- No instance for (Data.Typeable.Internal.Typeable a0)
