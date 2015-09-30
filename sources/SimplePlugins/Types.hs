@@ -6,7 +6,6 @@ import Data.Tagged
 
 import Data.Typeable
 import           Control.Monad.IO.Class
-import Control.Concurrent(ThreadId) 
 
 import DynFlags (FlushOut(..), defaultFatalMessager, defaultFlushOut)
 import HscTypes (SourceError)
@@ -30,7 +29,7 @@ type UpdatePlugin plugin = (Maybe plugin -> IO ())
 {- |
 
 -}
-type SignalHandlerInstaller = [ThreadId] -> IO () 
+type SignalHandlerInstaller = IO () 
 
 {- | an identifier tagged with the plugin type (that it will be casted into, when reloaded).  
 

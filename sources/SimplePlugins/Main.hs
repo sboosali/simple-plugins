@@ -15,7 +15,6 @@ import Control.Exception
 import           GHC (Ghc)
 
 
-
 launchReloader
  :: (IsPlugin plugin)
  => LoaderConfig
@@ -36,20 +35,19 @@ launchReloader loaderConfig ghcConfig updatePlugin identifier = do
 
  _updaterThread  <- fork$ pluginUpdater pluginChannel updatePlugin
 
- _reloaderThread <- fork$ do
-     pluginReloader filenameChannel pluginChannel (userInterruptInstaller [mainThread]) loaderConfig ghcConfig identifier
+ _reloaderThread <- fork$ pluginReloader filenameChannel pluginChannel (userInterruptInstaller mainThread) loaderConfig ghcConfig identifier
 
  keepAlive$ return() 
  -- pluginThreads
 
-userInterruptInstaller :: [ThreadId] -> SignalHandlerInstaller 
-userInterruptInstaller parentThreadIds childThreadIds
- = installHandler sigINT (\_ -> handleUserInterrupt (childThreadIds ++ parentThreadIds))
+userInterruptInstaller :: ThreadId -> SignalHandlerInstaller 
+userInterruptInstaller mainThread 
+ = installHandler sigINT (\_signal -> handleUserInterrupt mainThread)
 
 -- without this, the program user interrupt http://neilmitchell.blogspot.com/2015/05/handling-control-c-in-haskell.html
 -- C-c causes "example: user interrupt" to be printed, doesn't cause determination 
-handleUserInterrupt :: [ThreadId] -> IO a
-handleUserInterrupt ts = do
- _ <- traverse (\t -> throwTo t UserInterrupt) ts --NOTE killThread is not enough  
+handleUserInterrupt :: ThreadId -> IO a
+handleUserInterrupt t = do
+ throwTo t UserInterrupt
  throw UserInterrupt
 

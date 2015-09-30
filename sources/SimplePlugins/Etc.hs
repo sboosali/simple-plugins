@@ -86,7 +86,7 @@ initGhcMonad' mb_top_dir
        ; GHC.setSession env }
 
 
-{- | re-implement 'installSignalHandlers' by simply throwing a UserInterrupt 
+{- | re-implement GHC's 'installSignalHandlers' by simply throwing a UserInterrupt 
 
 -}
 installSignalHandlers' :: IO () 

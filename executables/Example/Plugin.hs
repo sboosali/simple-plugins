@@ -7,8 +7,8 @@ module Example.Plugin where
 
 
 -- type is inferred 
-plugin = (show 'plugin)         -- TemplateHaskell works 
--- plugin = (show 'plugin ++ " reloaded") 
+-- plugin = (show 'plugin)         -- TemplateHaskell works 
+plugin = (show 'plugin ++ " reloaded") 
 
 -- plugin =                   -- it prints the parse error
 -- plugin = 0 + ""            -- it prints the type error

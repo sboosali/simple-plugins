@@ -88,7 +88,7 @@ withGHCSession installSignalHandler LoaderConfig{..} GhcConfig{..} action = do
 
   -- NOTE a hack. must run after `initGhcMonad` (which is run in `runGhc`) 
   -- my vague guess, the GHC API assumes the thread that runs runGhc is the main thread 
-  liftIO$ installSignalHandler [] 
+  liftIO$ installSignalHandler
 
   -- derived configuration 
   let pluginPath = _pluginDirectory ++ "/" ++ _pluginFile
