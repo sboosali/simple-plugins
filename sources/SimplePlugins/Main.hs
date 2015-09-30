@@ -7,13 +7,24 @@ import           SimplePlugins.Etc
 
 import System.Signal
 -- import qualified SlaveThread as Slave 
--- import           System.FSNotify
+import           System.FSNotify (Event) 
 
+import Control.Monad
 import Control.Concurrent
 import Control.Exception
 
 import           GHC (Ghc)
 
+
+defaultLaunchReloader
+ :: (IsPlugin plugin)
+ => FilePath
+ -> UpdatePlugin plugin
+ -> Identifier plugin
+ -> PluginReloader
+defaultLaunchReloader filepath updatePlugin identifier
+ = join$ launchReloader (defaultLoaderConfig filepath) defaultGhcConfig updatePlugin identifier <$> myThreadId <*> newChan <*> newChan
+--TODO must pass main thread, or any parent thread?
 
 launchReloader
  :: (IsPlugin plugin)
@@ -21,21 +32,17 @@ launchReloader
  -> GhcConfig Ghc
  -> UpdatePlugin plugin
  -> Identifier plugin
+ -> ThreadId
+ -> Chan Event
+ -> Chan (Maybe plugin)
  -> PluginReloader
-launchReloader loaderConfig ghcConfig updatePlugin identifier = do
+launchReloader loaderConfig ghcConfig updatePlugin identifier mainThread filenameChannel pluginChannel = do
 
- let fork = forkIO              --  Slave.fork
+ _watcherThread  <- forkIO$ directoryWatcher filenameChannel loaderConfig
 
- filenameChannel <- newChan
- pluginChannel <- newChan
+ _updaterThread  <- forkIO$ pluginUpdater pluginChannel updatePlugin
 
- mainThread <- myThreadId
-
- _watcherThread  <- fork$ directoryWatcher filenameChannel loaderConfig
-
- _updaterThread  <- fork$ pluginUpdater pluginChannel updatePlugin
-
- _reloaderThread <- fork$ pluginReloader filenameChannel pluginChannel (userInterruptInstaller mainThread) loaderConfig ghcConfig identifier
+ _reloaderThread <- forkIO$ pluginReloader filenameChannel pluginChannel (userInterruptInstaller mainThread) loaderConfig ghcConfig identifier
 
  keepAlive$ return() 
  -- pluginThreads

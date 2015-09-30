@@ -9,12 +9,13 @@ import SimplePlugins.Main
 
 import Control.Monad
 import Control.Monad.IO.Class
+import Control.Concurrent
 
 
 main = exampleReloader 
 
 exampleReloader :: PluginReloader 
-exampleReloader = launchReloader exampleLoaderConfig exampleGhcConfig exampleUpdatePlugin exampleIdentifier
+exampleReloader = join$ launchReloader exampleLoaderConfig exampleGhcConfig exampleUpdatePlugin exampleIdentifier <$> myThreadId <*> newChan <*> newChan
 
 -- | 
 exampleUpdatePlugin :: (Show plugin) => UpdatePlugin plugin
