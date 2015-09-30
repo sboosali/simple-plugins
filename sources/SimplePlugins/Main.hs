@@ -12,14 +12,14 @@ import System.Signal
 import Control.Concurrent
 import Control.Exception
 
+import           GHC (Ghc)
 
 
--- TODO ignores user interrupt http://neilmitchell.blogspot.com/2015/05/handling-control-c-in-haskell.html
--- C-c causes "example: user interrupt" not termination 
+
 launchReloader
  :: (IsPlugin plugin)
  => LoaderConfig
- -> GhcConfig SaferGhc
+ -> GhcConfig Ghc
  -> UpdatePlugin plugin
  -> Identifier plugin
  -> PluginReloader
@@ -27,29 +27,29 @@ launchReloader loaderConfig ghcConfig updatePlugin identifier = do
 
  let fork = forkIO              --  Slave.fork
 
- watcherChannel <- newChan
+ filenameChannel <- newChan
  pluginChannel <- newChan
 
- _mainThread <- myThreadId
+ mainThread <- myThreadId
 
- _watcherThread  <- fork$ directoryWatcher watcherChannel loaderConfig
+ _watcherThread  <- fork$ directoryWatcher filenameChannel loaderConfig
 
  _updaterThread  <- fork$ pluginUpdater pluginChannel updatePlugin
 
- _reloaderThread <- fork$ pluginWatcher watcherChannel pluginChannel loaderConfig ghcConfig identifier
+ _reloaderThread <- fork$ do
+     pluginReloader filenameChannel pluginChannel (userInterruptInstaller [mainThread]) loaderConfig ghcConfig identifier
 
- -- `installInterruptHandler` must run after `initGhcMonad`
- -- let installInterruptHandler = return()
- let installInterruptHandler = installHandler sigINT (handleInterrupt [_watcherThread,_updaterThread,_reloaderThread,_mainThread])
- keepAlive$ installInterruptHandler
+ keepAlive$ return() 
+ -- pluginThreads
 
--- pluginThreads
+userInterruptInstaller :: [ThreadId] -> SignalHandlerInstaller 
+userInterruptInstaller parentThreadIds childThreadIds
+ = installHandler sigINT (\_ -> handleUserInterrupt (childThreadIds ++ parentThreadIds))
 
-handleInterrupt :: (Show a, Traversable t) => t ThreadId -> a -> IO b
-handleInterrupt threadIds signal = do
- print$ "CAUGHT SIGNAL: " ++ show signal 
- _ <- traverse (\t -> throwTo t UserInterrupt) threadIds
- -- _ <- traverse killThread threadIds
- print$ "THROWING INTERRUPT"
+-- without this, the program user interrupt http://neilmitchell.blogspot.com/2015/05/handling-control-c-in-haskell.html
+-- C-c causes "example: user interrupt" to be printed, doesn't cause determination 
+handleUserInterrupt :: [ThreadId] -> IO a
+handleUserInterrupt ts = do
+ _ <- traverse (\t -> throwTo t UserInterrupt) ts --NOTE killThread is not enough  
  throw UserInterrupt
 

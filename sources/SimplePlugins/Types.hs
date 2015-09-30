@@ -6,6 +6,7 @@ import Data.Tagged
 
 import Data.Typeable
 import           Control.Monad.IO.Class
+import Control.Concurrent(ThreadId) 
 
 import DynFlags (FlushOut(..), defaultFatalMessager, defaultFlushOut)
 import HscTypes (SourceError)
@@ -26,11 +27,32 @@ type PluginReloader = IO ()
 type UpdatePlugin plugin = (Maybe plugin -> IO ())
 -- newtype UpdatePlugin plugin = UpdatePlugin (Maybe plugin -> IO ())
 
--- | an identifier tagged with the plugin type (it will be casted into, when reloaded) 
+{- |
+
+-}
+type SignalHandlerInstaller = [ThreadId] -> IO () 
+
+{- | an identifier tagged with the plugin type (that it will be casted into, when reloaded).  
+
+-}
 type Identifier a = Tagged a String
 
--- | e.g. @(Identifier "myPlugin" :: Identifier MyPlugin)@
--- (uses @PatternSynonyms@)
+{- | 
+
+e.g. an 'Identifier' in the main file, like: 
+
+@(Identifier "port" :: Identifier Int)@
+
+represents an "identifier" in a config file, like:
+
+@
+port :: Int
+port = 1337
+@
+
+(uses @PatternSynonyms@)
+
+-}
 pattern Identifier i = Tagged i
 
 -- | the constraints a plugin type should satisfy (uses @ConstraintKinds@)

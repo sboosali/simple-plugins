@@ -11,7 +11,6 @@ import Data.Tagged
 
 -- import Data.Coerce
 import           Control.Concurrent
-import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Dynamic
 -- import           Data.IORef
@@ -26,13 +25,14 @@ import           Linker
 import           Packages
 
 
-pluginReloader :: (IsPlugin plugin, m ~ SaferGhc) => Chan Event -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig m -> Identifier plugin -> IO ()
-pluginReloader watcherChannel pluginChannel loaderConfig ghcConfig identifier
- = withGHCSession loaderConfig ghcConfig $ forever$ do
-       _event <- liftIO$ readChan watcherChannel  -- blocks on reading from the channel                       
-       plugin' <- recompileTargets ghcConfig identifier
-       liftIO$ writeChan pluginChannel plugin'
-       liftIO$ threadDelay (1*1000*1000) 
+-- -- only runs once 
+-- pluginReloaderGhc :: (IsPlugin plugin, m ~ Ghc) => Chan Event -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig m -> Identifier plugin -> IO ()
+-- pluginReloaderGhc filenameChannel pluginChannel loaderConfig ghcConfig identifier
+--  = withGHCSession loaderConfig ghcConfig $ forever$ do
+--        _event <- liftIO$ readChan filenameChannel  -- blocks on reading from the channel                       
+--        plugin' <- recompileTargets ghcConfig identifier
+--        liftIO$ writeChan pluginChannel plugin'
+--        liftIO$ keepAlive$ return() 
 
 
 directoryWatcher :: Chan Event -> LoaderConfig -> IO ()
@@ -57,13 +57,21 @@ pluginUpdater :: Chan (Maybe plugin) -> (Maybe plugin -> IO ()) -> IO ()
 pluginUpdater pluginChannel updatePlugin = keepAlive$ do
   readChan pluginChannel >>= updatePlugin
 
--- | converts a stream of file system changes to a stream of plugins 
-pluginWatcher :: forall plugin m. (IsPlugin plugin, SaferGhc ~ m) => Chan Event -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig m -> Identifier plugin -> IO ()
-pluginWatcher watcherChannel pluginChannel loaderConfig ghcConfig identifier = forever$ do
-   _event <- readChan watcherChannel  -- blocks on reading from the channel                       
-   plugin' <- withGHCSession loaderConfig ghcConfig $ recompileTargets ghcConfig identifier -- TODO event
+-- | converts a stream of file system changes to a stream of plugins.  
+pluginReloader
+ :: forall plugin m. (IsPlugin plugin, Ghc ~ m)
+ => Chan Event
+ -> Chan (Maybe plugin)
+ -> SignalHandlerInstaller
+ -> LoaderConfig
+ -> GhcConfig m
+ -> Identifier plugin
+ -> IO ()
+pluginReloader filenameChannel pluginChannel installSignalHandler loaderConfig ghcConfig identifier = keepAlive$ do
+   _event <- readChan filenameChannel  -- blocks on reading from the channel                       
+   plugin' <- withGHCSession installSignalHandler loaderConfig ghcConfig $ do
+               recompileTargets ghcConfig identifier -- TODO event
    writeChan pluginChannel plugin'
-   threadDelay (1*1000*1000) 
 
 {- | sets the right 'DynFlags'.   
 
@@ -73,13 +81,14 @@ see <https://github.com/ghc/ghc/blob/06d46b1e4507e09eb2a7a04998a92610c8dc6277/co
 
 
 -}
-withGHCSession :: (SaferGhc ~ m) => LoaderConfig -> GhcConfig m -> m a -> IO a
+withGHCSession :: (Ghc ~ m) => SignalHandlerInstaller -> LoaderConfig -> GhcConfig m -> m a -> IO a
 -- withGHCSession :: (GhcMonad m) => LoaderConfig -> GhcConfig -> m a -> IO a 
-withGHCSession LoaderConfig{..} GhcConfig{..} action = do
- defaultErrorHandler _ghcFatalMessager (FlushOut _ghcFlushOut) $ (runGhc) (Just libdir) $ do
+withGHCSession installSignalHandler LoaderConfig{..} GhcConfig{..} action = do
+ defaultErrorHandler _ghcFatalMessager (FlushOut _ghcFlushOut) $ (runGhc') (Just libdir) $ do
 
-  -- -- `installInterruptHandler` must run after `initGhcMonad` (which is run in `runGhc`) 
-  -- liftIO$ installHandler sigINT (\_ -> throw UserInterrupt)
+  -- NOTE a hack. must run after `initGhcMonad` (which is run in `runGhc`) 
+  -- my vague guess, the GHC API assumes the thread that runs runGhc is the main thread 
+  liftIO$ installSignalHandler [] 
 
   -- derived configuration 
   let pluginPath = _pluginDirectory ++ "/" ++ _pluginFile
@@ -118,7 +127,7 @@ withGHCSession LoaderConfig{..} GhcConfig{..} action = do
   -- Set the given filename as a compilation target
   setTargets =<< sequence [guessTarget pluginPath Nothing]
 
-  runSaferGhc action
+  action
 
 
 
