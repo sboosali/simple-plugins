@@ -3,6 +3,7 @@ module SimplePlugins.Types where
 import           SimplePlugins.Etc
 
 import Data.Tagged
+import           System.FSNotify(Event) 
 
 import Data.Typeable
 import           Control.Monad.IO.Class
@@ -14,6 +15,16 @@ import Exception (ExceptionMonad(..))
 import           DynFlags (HasDynFlags(..)) 
 import           GHC () 
 
+
+{- |
+
+-}
+type ReloadEvent = Event 
+
+{- |
+
+-}
+type PluginEvent plugin = Maybe plugin
 
 {- |
 

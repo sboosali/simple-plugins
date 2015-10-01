@@ -25,17 +25,7 @@ import           Linker
 import           Packages
 
 
--- -- only runs once 
--- pluginReloaderGhc :: (IsPlugin plugin, m ~ Ghc) => Chan Event -> Chan (Maybe plugin) -> LoaderConfig -> GhcConfig m -> Identifier plugin -> IO ()
--- pluginReloaderGhc filenameChannel pluginChannel loaderConfig ghcConfig identifier
---  = withGHCSession loaderConfig ghcConfig $ forever$ do
---        _event <- liftIO$ readChan filenameChannel  -- blocks on reading from the channel                       
---        plugin' <- recompileTargets ghcConfig identifier
---        liftIO$ writeChan pluginChannel plugin'
---        liftIO$ keepAlive$ return() 
-
-
-directoryWatcher :: Chan Event -> LoaderConfig -> IO ()
+directoryWatcher :: Chan ReloadEvent -> LoaderConfig -> IO ()
 directoryWatcher directoryChannel loaderConfig@LoaderConfig{..} = withManager $ \manager -> do
  -- start a watching job (in the background)
  _stopListening <- watchTreeChan
@@ -53,15 +43,15 @@ eventPredicate LoaderConfig{..} = \case
  Removed  path _ -> takeExtension path `elem` _pluginExtensions
 
 
-pluginUpdater :: Chan (Maybe plugin) -> (Maybe plugin -> IO ()) -> IO ()
+pluginUpdater :: Chan (PluginEvent plugin) -> (PluginEvent plugin -> IO ()) -> IO ()
 pluginUpdater pluginChannel updatePlugin = keepAlive$ do
   readChan pluginChannel >>= updatePlugin
 
 -- | converts a stream of file system changes to a stream of plugins.  
 pluginReloader
  :: forall plugin m. (IsPlugin plugin, Ghc ~ m)
- => Chan Event
- -> Chan (Maybe plugin)
+ => Chan ReloadEvent            -- ^ reads from 
+ -> Chan (PluginEvent plugin)   -- ^ writes to 
  -> SignalHandlerInstaller
  -> LoaderConfig
  -> GhcConfig m
@@ -84,7 +74,7 @@ see <https://github.com/ghc/ghc/blob/06d46b1e4507e09eb2a7a04998a92610c8dc6277/co
 withGHCSession :: (Ghc ~ m) => SignalHandlerInstaller -> LoaderConfig -> GhcConfig m -> m a -> IO a
 -- withGHCSession :: (GhcMonad m) => LoaderConfig -> GhcConfig -> m a -> IO a 
 withGHCSession installSignalHandler LoaderConfig{..} GhcConfig{..} action = do
- defaultErrorHandler _ghcFatalMessager (FlushOut _ghcFlushOut) $ (runGhc') (Just libdir) $ do
+ defaultErrorHandler _ghcFatalMessager (FlushOut _ghcFlushOut) $ (runGhc') (Just libdir) $ do -- TODO runGhc installSignalHandler 
 
   -- NOTE a hack. must run after `initGhcMonad` (which is run in `runGhc`) 
   -- my vague guess, the GHC API assumes the thread that runs runGhc is the main thread 
@@ -131,9 +121,8 @@ withGHCSession installSignalHandler LoaderConfig{..} GhcConfig{..} action = do
 
 
 
--- Recompiles the current targets
-recompileTargets :: (IsPlugin plugin, GhcMonad m) => GhcConfig m -> Identifier plugin -> m (Maybe plugin)
--- recompileTargets :: (IsPlugin plugin, GhcMonad m) => GhcConfig -> Identifier plugin -> m (Maybe plugin)
+-- | Recompiles the current targets (that have been set by 'setTargets')
+recompileTargets :: (IsPlugin plugin, GhcMonad m) => GhcConfig m -> Identifier plugin -> m (PluginEvent plugin)
 recompileTargets GhcConfig{..} (Tagged identifier) = let _ghcPrintSourceError' e = _ghcPrintSourceError e >> return Nothing in handleSourceError _ghcPrintSourceError' $ do
 
 -- FilePath ->
