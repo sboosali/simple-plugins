@@ -19,7 +19,7 @@ import           GHC ()
 {- |
 
 -}
-type ReloadEvent = Event 
+type ReloadEvent = Either () Event 
 
 {- |
 
@@ -34,7 +34,7 @@ type PluginReloader = IO ()
 {- |
 
 -}
-type UpdatePlugin plugin = (Maybe plugin -> IO ())
+type UpdatePlugin plugin = (PluginEvent plugin -> IO ())
 -- newtype UpdatePlugin plugin = UpdatePlugin (Maybe plugin -> IO ())
 
 {- |

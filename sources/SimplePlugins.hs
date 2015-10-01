@@ -27,14 +27,17 @@ import           Packages
 
 directoryWatcher :: Chan ReloadEvent -> LoaderConfig -> IO ()
 directoryWatcher directoryChannel loaderConfig@LoaderConfig{..} = withManager $ \manager -> do
+ channel <- newChan
  -- start a watching job (in the background)
  _stopListening <- watchTreeChan
      manager
      _pluginDirectory
      ((&&) <$> (const True) <*> (eventPredicate loaderConfig))
-     directoryChannel 
- -- Keep the watcher alive forever
- keepAlive$ return() 
+     channel
+ -- Keep the watcher alive forever, injecting the filesystem event into a reload event 
+ keepAlive$ do
+  e <- readChan channel
+  writeChan directoryChannel (Right e) 
 
 eventPredicate :: LoaderConfig -> Event -> Bool 
 eventPredicate LoaderConfig{..} = \case 
@@ -43,7 +46,7 @@ eventPredicate LoaderConfig{..} = \case
  Removed  path _ -> takeExtension path `elem` _pluginExtensions
 
 
-pluginUpdater :: Chan (PluginEvent plugin) -> (PluginEvent plugin -> IO ()) -> IO ()
+pluginUpdater :: Chan (PluginEvent plugin) -> UpdatePlugin plugin -> IO ()
 pluginUpdater pluginChannel updatePlugin = keepAlive$ do
   readChan pluginChannel >>= updatePlugin
 

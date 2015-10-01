@@ -7,7 +7,6 @@ import           SimplePlugins.Etc
 
 import System.Signal
 -- import qualified SlaveThread as Slave 
-import           System.FSNotify (Event) 
 
 import Control.Monad
 import Control.Concurrent
@@ -33,16 +32,18 @@ launchReloader
  -> UpdatePlugin plugin
  -> Identifier plugin
  -> ThreadId
- -> Chan Event
- -> Chan (Maybe plugin)
+ -> Chan ReloadEvent
+ -> Chan (PluginEvent plugin)
  -> PluginReloader
-launchReloader loaderConfig ghcConfig updatePlugin identifier mainThread filenameChannel pluginChannel = do
+launchReloader loaderConfig ghcConfig updatePlugin identifier mainThread reloadChannel pluginChannel = do
 
- _watcherThread  <- forkIO$ directoryWatcher filenameChannel loaderConfig
+ writeChan reloadChannel (Left ()) -- reload plug-in at least once on startup
+
+ _watcherThread  <- forkIO$ directoryWatcher reloadChannel loaderConfig
 
  _updaterThread  <- forkIO$ pluginUpdater pluginChannel updatePlugin
 
- _reloaderThread <- forkIO$ pluginReloader filenameChannel pluginChannel (userInterruptInstaller mainThread) loaderConfig ghcConfig identifier
+ _reloaderThread <- forkIO$ pluginReloader reloadChannel pluginChannel (userInterruptInstaller mainThread) loaderConfig ghcConfig identifier
 
  keepAlive$ return() 
  -- pluginThreads
