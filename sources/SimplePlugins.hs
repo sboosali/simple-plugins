@@ -9,10 +9,11 @@ import           System.FSNotify
 import Data.Tagged
 -- import Control.Monad.Trans.Either
 
--- import Data.Coerce
 import           Control.Concurrent
 import           Control.Monad.IO.Class
 import           Data.Dynamic
+import           Data.Foldable                   (traverse_)
+-- import Data.Coerce
 -- import           Data.IORef
 -- import Control.Exception (getMaskingState) 
 -- import Control.Exception (throw, AsyncException(UserInterrupt)) 
@@ -60,11 +61,37 @@ pluginReloader
  -> GhcConfig m
  -> Identifier plugin
  -> IO ()
-pluginReloader filenameChannel pluginChannel installSignalHandler loaderConfig ghcConfig identifier = keepAlive$ do
-   _event <- readChan filenameChannel  -- blocks on reading from the channel                       
-   plugin' <- withGHCSession installSignalHandler loaderConfig ghcConfig $ do
-               recompileTargets ghcConfig identifier -- TODO event
-   writeChan pluginChannel plugin'
+pluginReloader reloadChannel pluginChannel installSignalHandler loaderConfig ghcConfig identifier = do
+
+ threadChannel <- newChan
+
+ -- the ghc thread has finished running, or no ghc thread is running 
+ let notRunning          = writeChan threadChannel Nothing
+ -- a ghc thread has started running from this thread 
+ let yesRunning threadId = writeChan threadChannel (Just threadId) 
+ -- if a ghc thread is running, then kill it
+ let stopRunning         = readChan threadChannel >>= traverse_ killThread
+ -- 
+ let startRunning        = forkIO$ do
+       plugin' <- withGHCSession installSignalHandler loaderConfig ghcConfig $ do
+                      recompileTargets ghcConfig identifier -- TODO event
+       writeChan pluginChannel plugin'
+       threadDelay (5*1000*1000) 
+       notRunning               -- the thread is about to exit 
+
+ notRunning
+
+ keepAlive$ do
+   -- blocks on reading from the channel,
+   -- while a plug-in is being reloaded in the child's thread
+   _event <- readChan reloadChannel
+   -- rather than waiting for the plug-in to finish reloading,
+   -- only to then reload a new plug-in, 
+   -- just kill the thread reloading it...
+   stopRunning
+   -- ... and spawn a new one. 
+   ghcThread <- startRunning
+   yesRunning ghcThread
 
 {- | sets the right 'DynFlags'.   
 
